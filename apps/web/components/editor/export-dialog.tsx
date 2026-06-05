@@ -38,8 +38,9 @@ export function ExportDialog({
   const [phase, setPhase] = useState<Phase>({ step: "submitting" });
   const sourceRef = useRef<EventSource | null>(null);
 
+  // callers set phase to "submitting" before invoking (initial state already
+  // is); no synchronous setState happens inside the effect below
   const start = useCallback(async () => {
-    setPhase({ step: "submitting" });
     try {
       // flush any pending edits so the render sees the latest timeline
       const { projectId: pid, timeline, setSaveState } =
@@ -81,6 +82,9 @@ export function ExportDialog({
   }, [projectId]);
 
   useEffect(() => {
+    // start() only sets state after network awaits resolve (submission +
+    // SSE events), never synchronously in the effect body
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (open) void start();
     return () => {
       sourceRef.current?.close();
@@ -146,7 +150,14 @@ export function ExportDialog({
               <CircleAlert className="mt-0.5 size-4 shrink-0 text-destructive" />
               <p className="text-sm text-muted-foreground">{phase.message}</p>
             </div>
-            <Button variant="outline" className="w-full" onClick={start}>
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => {
+                setPhase({ step: "submitting" });
+                void start();
+              }}
+            >
               Try again
             </Button>
           </div>
