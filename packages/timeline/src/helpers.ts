@@ -8,7 +8,7 @@ import type { Clip, Timeline } from "./types";
 
 /** Duration of a clip in frames, regardless of clip kind. */
 export function clipDurationInFrames(clip: Clip): number {
-  return clip.kind === "text"
+  return clip.kind === "text" || clip.kind === "graphic"
     ? clip.durationInFrames
     : clip.sourceOutFrame - clip.sourceInFrame;
 }

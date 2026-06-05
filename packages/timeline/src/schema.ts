@@ -138,10 +138,99 @@ export const textClipSchema = clipBase.extend({
   }),
 });
 
+// ---------------------------------------------------------------------------
+// Motion graphics presets (v1: overlay, shape, progress-bar)
+// ---------------------------------------------------------------------------
+
+/** Full-frame solid or gradient wash. `colorB: null` means solid. */
+export const overlayGraphicSchema = z.object({
+  preset: z.literal("overlay"),
+  color: z.string().min(1).default("#000000"),
+  colorB: z.string().min(1).nullable().default(null),
+  /** CSS linear-gradient angle in degrees (0 = to top, clockwise). */
+  angleDeg: z.number().min(0).max(360).default(180),
+});
+
+export const graphicShapeSchema = z.enum(["rect", "circle", "line"]);
+
+/** Positioned shape with the shared entrance-animation presets. */
+export const shapeGraphicSchema = z.object({
+  preset: z.literal("shape"),
+  shape: graphicShapeSchema.default("rect"),
+  color: z.string().min(1).default("#FFFFFF"),
+  position: normalizedPosition.default({ x: 0.5, y: 0.5 }),
+  /** Normalized size relative to the 1080x1920 stage. */
+  size: z
+    .object({
+      w: z.number().min(0.01).max(1),
+      h: z.number().min(0.005).max(1),
+    })
+    .default({ w: 0.3, h: 0.1 }),
+  animation: textAnimationSchema.default({
+    preset: "none",
+    durationInFrames: 15,
+  }),
+});
+
+/** Edge-anchored bar that fills across the clip's own duration. */
+export const progressBarGraphicSchema = z.object({
+  preset: z.literal("progress-bar"),
+  color: z.string().min(1).default("#FFFFFF"),
+  /** Bar thickness in stage pixels. */
+  thickness: z.int().min(2).max(120).default(12),
+  edge: z.enum(["top", "bottom"]).default("bottom"),
+});
+
+/** Daily-vlog lower third: full-width band with an accent edge, sits in the
+ * lower area; pair with a text clip for name/location/day labels. */
+export const lowerThirdGraphicSchema = z.object({
+  preset: z.literal("lower-third"),
+  color: z.string().min(1).default("#000000"),
+  accentColor: z.string().min(1).default("#FFFFFF"),
+  /** Band height, normalized to stage height. */
+  height: z.number().min(0.02).max(0.3).default(0.09),
+  /** Band top edge, normalized to stage height. */
+  y: z.number().min(0).max(1).default(0.74),
+  animation: textAnimationSchema.default({
+    preset: "slide-up",
+    durationInFrames: 15,
+  }),
+});
+
+/** Day-counter / location pill with its own label ("DAY 12"). */
+export const badgeGraphicSchema = z.object({
+  preset: z.literal("badge"),
+  label: z.string().min(1).max(40).default("DAY 01"),
+  color: z.string().min(1).default("#000000"),
+  textColor: z.string().min(1).default("#FFFFFF"),
+  fontSize: z.int().min(16).max(120).default(44),
+  position: normalizedPosition.default({ x: 0.18, y: 0.08 }),
+  animation: textAnimationSchema.default({
+    preset: "pop",
+    durationInFrames: 12,
+  }),
+});
+
+export const graphicParamsSchema = z.discriminatedUnion("preset", [
+  overlayGraphicSchema,
+  shapeGraphicSchema,
+  progressBarGraphicSchema,
+  lowerThirdGraphicSchema,
+  badgeGraphicSchema,
+]);
+
+export const graphicClipSchema = clipBase.extend({
+  kind: z.literal("graphic"),
+  durationInFrames: frameCount,
+  opacity: z.number().min(0).max(1).default(1),
+  graphic: graphicParamsSchema,
+});
+
 export const clipSchema = z.discriminatedUnion("kind", [
   videoClipSchema,
   audioClipSchema,
   textClipSchema,
+  graphicClipSchema,
 ]);
 
 // ---------------------------------------------------------------------------
@@ -154,7 +243,7 @@ export const clipSchema = z.discriminatedUnion("kind", [
  * text clips carry an explicit duration.
  */
 function clipDuration(clip: z.infer<typeof clipSchema>): number {
-  return clip.kind === "text"
+  return clip.kind === "text" || clip.kind === "graphic"
     ? clip.durationInFrames
     : clip.sourceOutFrame - clip.sourceInFrame;
 }
@@ -165,7 +254,11 @@ function refineTrackClips(
 ): void {
   for (let i = 0; i < clips.length; i++) {
     const clip = clips[i]!;
-    if (clip.kind !== "text" && clip.sourceOutFrame <= clip.sourceInFrame) {
+    if (
+      clip.kind !== "text" &&
+      clip.kind !== "graphic" &&
+      clip.sourceOutFrame <= clip.sourceInFrame
+    ) {
       ctx.addIssue({
         code: "custom",
         message: `clip ${clip.id}: sourceOutFrame must be greater than sourceInFrame`,
@@ -205,10 +298,16 @@ export const textTrackSchema = trackBase.extend({
   clips: z.array(textClipSchema).superRefine(refineTrackClips),
 });
 
+export const graphicTrackSchema = trackBase.extend({
+  kind: z.literal("graphic"),
+  clips: z.array(graphicClipSchema).superRefine(refineTrackClips),
+});
+
 export const trackSchema = z.discriminatedUnion("kind", [
   videoTrackSchema,
   audioTrackSchema,
   textTrackSchema,
+  graphicTrackSchema,
 ]);
 
 // ---------------------------------------------------------------------------

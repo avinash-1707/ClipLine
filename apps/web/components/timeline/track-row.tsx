@@ -61,7 +61,9 @@ export function TrackRow({
           clip={clip}
           trackId={track.id}
           asset={
-            clip.kind === "text" ? undefined : assetsById.get(clip.assetId)
+            clip.kind === "text" || clip.kind === "graphic"
+              ? undefined
+              : assetsById.get(clip.assetId)
           }
         />
       ))}

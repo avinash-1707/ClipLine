@@ -129,7 +129,7 @@ export const useTimelineStore = create<TimelineStore>((set, get) => ({
         .flatMap((t) => t.clips as Clip[])
         .find((c) => c.id === clipId);
       const assetDuration =
-        clip && clip.kind !== "text"
+        clip && clip.kind !== "text" && clip.kind !== "graphic"
           ? s.assetsById[clip.assetId]?.durationInFrames
           : undefined;
       return mutate(s, trimClip(s.timeline, clipId, edge, delta, assetDuration));

@@ -137,7 +137,7 @@ export function resolveAudio(
 ): ActiveAudio[] {
   const active: ActiveAudio[] = [];
   for (const track of timeline.tracks) {
-    if (track.kind === "text") continue;
+    if (track.kind === "text" || track.kind === "graphic") continue;
     for (const clip of track.clips) {
       if (frame >= clip.startFrame && frame < clipEndFrame(clip)) {
         active.push({ clip, sourceTimeSec: sourceTimeSec(clip, frame) });
