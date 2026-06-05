@@ -27,6 +27,7 @@ interface TimelineStore {
   /** Horizontal zoom in pixels per frame. */
   pxPerFrame: number;
   saveState: SaveState;
+  isPlaying: boolean;
 
   load: (projectId: string, timeline: Timeline) => void;
   registerAssets: (assets: AssetMeta[]) => void;
@@ -34,6 +35,7 @@ interface TimelineStore {
   select: (clipId: string | null) => void;
   setZoom: (pxPerFrame: number) => void;
   setSaveState: (s: SaveState) => void;
+  setPlaying: (playing: boolean) => void;
 
   addClip: (trackId: string, assetId: string, startFrame: number) => void;
   moveClip: (clipId: string, trackId: string, startFrame: number) => void;
@@ -58,6 +60,7 @@ export const useTimelineStore = create<TimelineStore>((set, get) => ({
   selectedClipId: null,
   pxPerFrame: 2,
   saveState: "idle",
+  isPlaying: false,
 
   load: (projectId, timeline) => {
     const withTracks = withDefaultTracks(timeline);
@@ -90,6 +93,8 @@ export const useTimelineStore = create<TimelineStore>((set, get) => ({
     set({ pxPerFrame: Math.max(0.5, Math.min(8, pxPerFrame)) }),
 
   setSaveState: (saveState) => set({ saveState }),
+
+  setPlaying: (isPlaying) => set({ isPlaying }),
 
   addClip: (trackId, assetId, startFrame) =>
     set((s) => {

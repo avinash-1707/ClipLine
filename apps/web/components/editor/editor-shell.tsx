@@ -117,7 +117,7 @@ export function EditorShell({ projectId }: { projectId: string }) {
         </aside>
 
         <main className="flex min-w-0 flex-1 flex-col">
-          <PreviewStage />
+          <PreviewStage assets={assets.data ?? []} />
         </main>
 
         <aside className="hidden w-64 shrink-0 border-l border-border lg:flex lg:flex-col">

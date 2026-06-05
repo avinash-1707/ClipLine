@@ -8,20 +8,8 @@ import type { Asset } from "@/lib/api";
 import { selectDuration, useTimelineStore } from "@/store/timeline";
 import { Playhead } from "./playhead";
 import { Ruler } from "./ruler";
+import { Timecode } from "./timecode";
 import { TrackRow } from "./track-row";
-
-function Timecode() {
-  const frame = useTimelineStore((s) => s.playheadFrame);
-  const m = Math.floor(frame / FPS / 60);
-  const s = Math.floor(frame / FPS) % 60;
-  const f = frame % FPS;
-  return (
-    <span className="label-mono tabular-nums text-muted-foreground">
-      {String(m).padStart(2, "0")}:{String(s).padStart(2, "0")}:
-      {String(f).padStart(2, "0")}
-    </span>
-  );
-}
 
 export function Timeline({ assets }: { assets: Asset[] }) {
   const timeline = useTimelineStore((s) => s.timeline);
