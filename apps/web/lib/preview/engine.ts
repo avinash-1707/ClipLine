@@ -8,7 +8,10 @@ import { useTimelineStore } from "@/store/timeline";
 import {
   gradeToFilter,
   resolveAudio,
-  resolveVideo,
+  resolveTexts,
+  resolveVideoLayers,
+  type ActiveText,
+  type ActiveVideo,
 } from "./resolve";
 
 interface PooledMedia {
@@ -39,6 +42,8 @@ export class PreviewEngine {
   private playStartWallSec = 0;
   private playStartFrame = 0;
   private unsubscribe: () => void;
+  /** Resolved page font stack — canvas can't use next/font CSS variables. */
+  private fontFamily = "sans-serif";
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -58,6 +63,7 @@ export class PreviewEngine {
       if (state.isPlaying !== prev.isPlaying) return;
     });
 
+    this.fontFamily = getComputedStyle(document.body).fontFamily || "sans-serif";
     this.drawBlack();
     this.loop = this.loop.bind(this);
   }
@@ -201,38 +207,149 @@ export class PreviewEngine {
     }
   }
 
-  /** Composite the active video clip (cover-fit + grade) onto the canvas. */
+  /** Composite video layers (with transition blend) plus text overlays. */
   private drawCurrent() {
     const { timeline, playheadFrame } = useTimelineStore.getState();
     if (!timeline) {
       this.drawBlack();
       return;
     }
-    const active = resolveVideo(timeline, playheadFrame);
-    if (!active) {
-      this.drawBlack();
-      return;
+    this.drawBlack();
+
+    const layers = resolveVideoLayers(timeline, playheadFrame);
+    if (layers) {
+      const { current, outgoing, transition, progress } = layers;
+      const sameAsset =
+        outgoing != null && outgoing.clip.assetId === current.clip.assetId;
+
+      if (!outgoing || !transition || sameAsset) {
+        // one element cannot show two source times — skip the blend
+        this.drawVideoLayer(current, 1, 0, 0);
+      } else {
+        const { ctx } = this;
+        const w = this.canvas.width;
+        switch (transition.preset) {
+          case "fade":
+            this.drawVideoLayer(outgoing, 1, 0, 0);
+            this.drawVideoLayer(current, progress, 0, 0);
+            break;
+          case "slide": {
+            const dir = transition.direction;
+            const dx =
+              dir === "left" ? w * (1 - progress)
+              : dir === "right" ? -w * (1 - progress)
+              : 0;
+            const dy =
+              dir === "up" ? this.canvas.height * (1 - progress)
+              : dir === "down" ? -this.canvas.height * (1 - progress)
+              : 0;
+            this.drawVideoLayer(outgoing, 1, 0, 0);
+            this.drawVideoLayer(current, 1, dx, dy);
+            break;
+          }
+          case "wipe": {
+            this.drawVideoLayer(outgoing, 1, 0, 0);
+            const ctxSave = ctx;
+            ctxSave.save();
+            const h = this.canvas.height;
+            const dir = transition.direction;
+            ctxSave.beginPath();
+            if (dir === "left") ctxSave.rect(w * (1 - progress), 0, w * progress, h);
+            else if (dir === "right") ctxSave.rect(0, 0, w * progress, h);
+            else if (dir === "up") ctxSave.rect(0, h * (1 - progress), w, h * progress);
+            else ctxSave.rect(0, 0, w, h * progress);
+            ctxSave.clip();
+            this.drawVideoLayer(current, 1, 0, 0);
+            ctxSave.restore();
+            break;
+          }
+        }
+      }
     }
-    const media = this.pool.get(active.clip.assetId);
+
+    for (const text of resolveTexts(timeline, playheadFrame)) {
+      this.drawText(text);
+    }
+  }
+
+  /** Draw one video layer cover-fit with its color grade. */
+  private drawVideoLayer(
+    layer: ActiveVideo,
+    alpha: number,
+    dx: number,
+    dy: number,
+  ) {
+    const media = this.pool.get(layer.clip.assetId);
     const video = media?.element as HTMLVideoElement | undefined;
-    if (!video || video.readyState < 2 || !video.videoWidth) {
-      this.drawBlack();
-      return;
-    }
+    if (!video || video.readyState < 2 || !video.videoWidth) return;
 
     const { ctx } = this;
     const cw = this.canvas.width;
     const ch = this.canvas.height;
-    // cover-fit: fill the 9:16 frame, crop overflow
     const scale = Math.max(cw / video.videoWidth, ch / video.videoHeight);
     const dw = video.videoWidth * scale;
     const dh = video.videoHeight * scale;
 
-    ctx.filter = gradeToFilter(active.clip);
-    ctx.fillStyle = "#000";
-    ctx.fillRect(0, 0, cw, ch);
-    ctx.drawImage(video, (cw - dw) / 2, (ch - dh) / 2, dw, dh);
-    ctx.filter = "none";
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.filter = gradeToFilter(layer.clip);
+    ctx.drawImage(video, (cw - dw) / 2 + dx, (ch - dh) / 2 + dy, dw, dh);
+    ctx.restore();
+  }
+
+  /** Draw a text clip with its entrance animation. */
+  private drawText({ clip, localFrame }: ActiveText) {
+    const { ctx } = this;
+    const anim = clip.animation;
+    const p =
+      anim.preset === "none"
+        ? 1
+        : Math.min(localFrame / anim.durationInFrames, 1);
+    const easeOut = 1 - (1 - p) ** 3;
+
+    let alpha = 1;
+    let offsetY = 0;
+    let scale = 1;
+    let text = clip.text;
+    switch (anim.preset) {
+      case "fade-in":
+        alpha = easeOut;
+        break;
+      case "slide-up":
+        alpha = easeOut;
+        offsetY = (1 - easeOut) * 60;
+        break;
+      case "pop":
+        alpha = Math.min(p * 2, 1);
+        scale = 0.8 + 0.2 * easeOut;
+        break;
+      case "typewriter":
+        text = clip.text.slice(
+          0,
+          Math.ceil(clip.text.length * p),
+        );
+        break;
+    }
+
+    const x = clip.position.x * this.canvas.width;
+    const y = clip.position.y * this.canvas.height + offsetY;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(x, y);
+    ctx.scale(scale, scale);
+    ctx.font = `600 ${clip.fontSize}px ${this.fontFamily}`;
+    ctx.fillStyle = clip.color;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    // multi-line: split on newlines, 1.2 line height
+    const lines = text.split("\n");
+    const lineHeight = clip.fontSize * 1.2;
+    const firstY = -((lines.length - 1) * lineHeight) / 2;
+    lines.forEach((line, i) => {
+      ctx.fillText(line, 0, firstY + i * lineHeight);
+    });
+    ctx.restore();
   }
 
   private drawBlack() {

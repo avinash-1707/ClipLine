@@ -276,6 +276,86 @@ export function splitClip(
   }));
 }
 
+/**
+ * Patch properties of a clip in place (gain, color grade, text styling,
+ * transitions…). Does not move or resize — use moveClip/trimClip for that.
+ */
+export function updateClip(
+  timeline: Timeline,
+  clipId: string,
+  patch: Partial<Clip>,
+): Timeline {
+  const found = findClip(timeline, clipId);
+  if (!found) return timeline;
+  return mapTrack(timeline, found.track.id, (t) => ({
+    ...t,
+    clips: (t.clips as Clip[]).map((c) =>
+      c.id === clipId ? ({ ...c, ...patch, id: c.id, kind: c.kind } as Clip) : c,
+    ) as never,
+  }));
+}
+
+/** Default duration for a new text clip: 3 seconds. */
+export const DEFAULT_TEXT_DURATION = 90;
+
+/** Add a text clip on the (first) text track at the wanted frame. */
+export function addTextClip(
+  timeline: Timeline,
+  wantedStart: number,
+  text = "Your text",
+): Timeline | null {
+  const track = timeline.tracks.find((t) => t.kind === "text");
+  if (!track) return null;
+  const start = findFreeStart(track, wantedStart, DEFAULT_TEXT_DURATION);
+  if (start == null) return null;
+
+  const clip: Clip = {
+    id: crypto.randomUUID(),
+    kind: "text",
+    startFrame: start,
+    durationInFrames: DEFAULT_TEXT_DURATION,
+    text,
+    position: { x: 0.5, y: 0.5 },
+    fontSize: 64,
+    fontFamily: "Geist Sans",
+    color: "#FFFFFF",
+    animation: { preset: "none", durationInFrames: 15 },
+  };
+  return mapTrack(timeline, track.id, (t) => ({
+    ...t,
+    clips: sortClips([...(t.clips as Clip[]), clip]) as never,
+  }));
+}
+
+/** Guarantee a text track exists (older projects predate it). */
+export function ensureTextTrack(timeline: Timeline): Timeline {
+  if (timeline.tracks.some((t) => t.kind === "text")) return timeline;
+  return {
+    ...timeline,
+    tracks: [
+      { id: crypto.randomUUID(), kind: "text", name: "T1", clips: [] },
+      ...timeline.tracks,
+    ],
+  };
+}
+
+/**
+ * The clip immediately after this one on the same track with no gap —
+ * the only legal target for a transition.
+ */
+export function adjacentNextClip(
+  timeline: Timeline,
+  clipId: string,
+): Clip | null {
+  const found = findClip(timeline, clipId);
+  if (!found) return null;
+  const clips = sortClips(found.track.clips as Clip[]);
+  const index = clips.findIndex((c) => c.id === clipId);
+  const next = clips[index + 1];
+  if (!next) return null;
+  return next.startFrame === clipEndFrame(clips[index]!) ? next : null;
+}
+
 export function removeClip(timeline: Timeline, clipId: string): Timeline {
   return {
     ...timeline,
@@ -286,12 +366,13 @@ export function removeClip(timeline: Timeline, clipId: string): Timeline {
   };
 }
 
-/** Default track set for a fresh project: two video tracks, one audio. */
+/** Default track set for a fresh project: text, two video tracks, audio. */
 export function withDefaultTracks(timeline: Timeline): Timeline {
-  if (timeline.tracks.length > 0) return timeline;
+  if (timeline.tracks.length > 0) return ensureTextTrack(timeline);
   return {
     ...timeline,
     tracks: [
+      { id: crypto.randomUUID(), kind: "text", name: "T1", clips: [] },
       { id: crypto.randomUUID(), kind: "video", name: "V2", clips: [] },
       { id: crypto.randomUUID(), kind: "video", name: "V1", clips: [] },
       { id: crypto.randomUUID(), kind: "audio", name: "A1", clips: [] },

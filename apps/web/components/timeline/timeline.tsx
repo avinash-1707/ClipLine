@@ -1,7 +1,7 @@
 "use client";
 
 import { FPS, MAX_DURATION_IN_FRAMES } from "@clipline/timeline";
-import { Minus, Plus, Scissors, Trash2 } from "lucide-react";
+import { Minus, Plus, Scissors, Trash2, Type } from "lucide-react";
 import { useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import type { Asset } from "@/lib/api";
@@ -20,6 +20,7 @@ export function Timeline({ assets }: { assets: Asset[] }) {
   const removeSelected = useTimelineStore((s) => s.removeSelected);
   const select = useTimelineStore((s) => s.select);
   const setPlayhead = useTimelineStore((s) => s.setPlayhead);
+  const addText = useTimelineStore((s) => s.addTextAtPlayhead);
   const duration = useTimelineStore(selectDuration);
 
   const assetsById = useMemo(
@@ -100,6 +101,15 @@ export function Timeline({ assets }: { assets: Asset[] }) {
             onClick={removeSelected}
           >
             <Trash2 className="size-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Add text at playhead"
+            title="Add text at playhead"
+            onClick={addText}
+          >
+            <Type className="size-3.5" />
           </Button>
         </div>
         <Timecode />

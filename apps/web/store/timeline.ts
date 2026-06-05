@@ -7,10 +7,12 @@ import {
 import { create } from "zustand";
 import {
   addClipFromAsset,
+  addTextClip,
   moveClip,
   removeClip,
   splitClip,
   trimClip,
+  updateClip,
   withDefaultTracks,
   type AssetMeta,
 } from "@/lib/timeline-ops";
@@ -42,6 +44,8 @@ interface TimelineStore {
   trimClip: (clipId: string, edge: "start" | "end", delta: number) => void;
   splitSelectedAtPlayhead: () => void;
   removeSelected: () => void;
+  updateClip: (clipId: string, patch: Partial<Clip>) => void;
+  addTextAtPlayhead: () => void;
 }
 
 function mutate(
@@ -137,7 +141,39 @@ export const useTimelineStore = create<TimelineStore>((set, get) => ({
         selectedClipId: null,
       };
     }),
+
+  updateClip: (clipId, patch) =>
+    set((s) =>
+      s.timeline ? mutate(s, updateClip(s.timeline, clipId, patch)) : {},
+    ),
+
+  addTextAtPlayhead: () =>
+    set((s) => {
+      if (!s.timeline) return {};
+      const next = addTextClip(s.timeline, s.playheadFrame);
+      if (!next) return {};
+      // select the clip just added so the inspector opens on it
+      const track = next.tracks.find((t) => t.kind === "text")!;
+      const added = (track.clips as Clip[]).find(
+        (c) => !(s.timeline!.tracks.find((t) => t.kind === "text")
+          ?.clips as Clip[] | undefined)?.some((p) => p.id === c.id),
+      );
+      return { ...mutate(s, next), selectedClipId: added?.id ?? null };
+    }),
 }));
+
+/** The currently selected clip, or null. */
+export function selectSelectedClip(s: {
+  timeline: Timeline | null;
+  selectedClipId: string | null;
+}): Clip | null {
+  if (!s.timeline || !s.selectedClipId) return null;
+  return (
+    s.timeline.tracks
+      .flatMap((t) => t.clips as Clip[])
+      .find((c) => c.id === s.selectedClipId) ?? null
+  );
+}
 
 /** Total duration of the current timeline, for ruler width and time display. */
 export function selectDuration(s: { timeline: Timeline | null }): number {
