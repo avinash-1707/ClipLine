@@ -33,7 +33,7 @@ export default function LandingPage() {
     <div className="relative flex min-h-screen flex-col bg-background text-foreground">
       {/* Nav */}
       <header
-        className="rise mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-5"
+        className="rise mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-8"
         style={{ "--rise": 0 } as React.CSSProperties}
       >
         <div className="flex items-center gap-2.5">
@@ -56,7 +56,7 @@ export default function LandingPage() {
 
       {/* Hero */}
       <main className="relative mx-auto w-full max-w-6xl flex-1 px-6">
-        <section className="grain relative grid grid-cols-1 gap-12 border-y border-border py-16 md:grid-cols-[1.2fr_0.8fr] md:gap-8 md:py-24">
+        <section className="grain relative grid grid-cols-1 gap-16 border-y border-border py-24 md:grid-cols-[1.2fr_0.8fr] md:gap-12 md:py-40">
           <div className="flex flex-col justify-center">
             <p
               className="label-mono rise text-muted-foreground"
@@ -65,7 +65,7 @@ export default function LandingPage() {
               A vertical video editor
             </p>
             <h1
-              className="font-display rise mt-5 text-5xl leading-[1.04] md:text-7xl"
+              className="font-display rise mt-8 text-6xl leading-[1.06] md:text-8xl"
               style={{ "--rise": 2 } as React.CSSProperties}
             >
               Cut clean.
@@ -73,7 +73,7 @@ export default function LandingPage() {
               Ship <em>vertical.</em>
             </h1>
             <p
-              className="rise mt-6 max-w-md text-[15px] leading-relaxed text-muted-foreground"
+              className="rise mt-9 max-w-md text-base leading-relaxed text-muted-foreground"
               style={{ "--rise": 3 } as React.CSSProperties}
             >
               Clipline is a focused editor for Reels, Shorts and TikTok.
@@ -81,7 +81,7 @@ export default function LandingPage() {
               exactly what you previewed.
             </p>
             <div
-              className="rise mt-8 flex items-center gap-3"
+              className="rise mt-12 flex items-center gap-4"
               style={{ "--rise": 4 } as React.CSSProperties}
             >
               <Button
@@ -103,7 +103,7 @@ export default function LandingPage() {
             className="rise flex items-center justify-center"
             style={{ "--rise": 3 } as React.CSSProperties}
           >
-            <div className="relative aspect-9/16 w-56 overflow-hidden rounded-xl border border-border bg-card shadow-[0_24px_64px_-24px_rgb(0_0_0/0.5)] md:w-64">
+            <div className="relative aspect-9/16 w-60 overflow-hidden rounded-xl border border-border bg-card shadow-[0_32px_80px_-28px_rgb(0_0_0/0.55)] md:w-72">
               {/* frame content */}
               <div className="absolute inset-0 bg-[linear-gradient(165deg,oklch(0.32_0_0)_0%,oklch(0.2_0_0)_55%,oklch(0.16_0_0)_100%)]" />
               <div className="absolute left-1/2 top-[18%] h-px w-2/3 -translate-x-1/2 bg-white/15" />
@@ -141,7 +141,7 @@ export default function LandingPage() {
           {FEATURES.map((f, i) => (
             <div
               key={f.n}
-              className="rise border-b border-border px-1 py-10 last:border-b-0 md:border-b-0 md:border-r md:px-8 md:first:pl-1 md:last:border-r-0"
+              className="rise border-b border-border px-1 py-16 last:border-b-0 md:border-b-0 md:border-r md:px-10 md:first:pl-1 md:last:border-r-0"
               style={{ "--rise": 5 + i } as React.CSSProperties}
             >
               <span className="label-mono text-muted-foreground">{f.n}</span>
@@ -157,11 +157,11 @@ export default function LandingPage() {
 
         {/* Spec strip */}
         <section
-          className="rise grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border md:grid-cols-4"
+          className="rise mt-10 grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border md:grid-cols-4"
           style={{ "--rise": 8 } as React.CSSProperties}
         >
           {SPECS.map(([k, v]) => (
-            <div key={k} className="bg-background px-5 py-4">
+            <div key={k} className="bg-background px-6 py-6">
               <dt className="label-mono text-muted-foreground">{k}</dt>
               <dd className="mt-1.5 text-sm font-medium">{v}</dd>
             </div>
@@ -170,8 +170,8 @@ export default function LandingPage() {
       </main>
 
       {/* Footer */}
-      <footer className="mx-auto mt-20 w-full max-w-6xl px-6">
-        <div className="flex items-center justify-between border-t border-border py-6">
+      <footer className="mx-auto mt-36 w-full max-w-6xl px-6">
+        <div className="flex items-center justify-between border-t border-border py-10">
           <span className="label-mono text-muted-foreground">
             Clipline · 2026
           </span>
