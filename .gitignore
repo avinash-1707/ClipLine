@@ -1,0 +1,26 @@
+context/
+CLAUDE.md
+
+# dependencies
+node_modules/
+
+# builds
+dist/
+.next/
+out/
+
+# turbo
+.turbo/
+
+# env
+.env
+.env.local
+.env.*.local
+
+# media storage
+media/
+
+# misc
+*.log
+.DS_Store
+*.tsbuildinfo
