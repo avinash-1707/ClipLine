@@ -7,6 +7,7 @@ import {
 import { create } from "zustand";
 import {
   addClipFromAsset,
+  addGraphicClip,
   addTextClip,
   moveClip,
   removeClip,
@@ -15,6 +16,7 @@ import {
   updateClip,
   withDefaultTracks,
   type AssetMeta,
+  type GraphicPreset,
 } from "@/lib/timeline-ops";
 
 export type SaveState = "idle" | "dirty" | "saving" | "saved" | "error";
@@ -49,6 +51,8 @@ interface TimelineStore {
   updateClip: (clipId: string, patch: Partial<Clip>) => void;
   /** Returns false when the text track has no room at the playhead. */
   addTextAtPlayhead: () => boolean;
+  /** Returns false when the graphic track has no room at the playhead. */
+  addGraphicAtPlayhead: (preset: GraphicPreset) => boolean;
 }
 
 function mutate(
@@ -164,6 +168,20 @@ export const useTimelineStore = create<TimelineStore>((set, get) => ({
     const track = next.tracks.find((t) => t.kind === "text")!;
     const added = (track.clips as Clip[]).find(
       (c) => !(s.timeline!.tracks.find((t) => t.kind === "text")
+        ?.clips as Clip[] | undefined)?.some((p) => p.id === c.id),
+    );
+    set({ ...mutate(s, next), selectedClipId: added?.id ?? null });
+    return true;
+  },
+
+  addGraphicAtPlayhead: (preset) => {
+    const s = get();
+    if (!s.timeline) return false;
+    const next = addGraphicClip(s.timeline, s.playheadFrame, preset);
+    if (!next) return false;
+    const track = next.tracks.find((t) => t.kind === "graphic")!;
+    const added = (track.clips as Clip[]).find(
+      (c) => !(s.timeline!.tracks.find((t) => t.kind === "graphic")
         ?.clips as Clip[] | undefined)?.some((p) => p.id === c.id),
     );
     set({ ...mutate(s, next), selectedClipId: added?.id ?? null });

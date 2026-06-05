@@ -2,6 +2,8 @@ import {
   clipEndFrame,
   FPS,
   type AudioClip,
+  type GraphicClip,
+  type TextAnimation,
   type TextClip,
   type Timeline,
   type Transition,
@@ -128,6 +130,66 @@ export function resolveTexts(timeline: Timeline, frame: number): ActiveText[] {
     }
   }
   return active;
+}
+
+export interface ActiveGraphic {
+  clip: GraphicClip;
+  localFrame: number;
+}
+
+/** All graphic clips covering the frame. */
+export function resolveGraphics(
+  timeline: Timeline,
+  frame: number,
+): ActiveGraphic[] {
+  const active: ActiveGraphic[] = [];
+  for (const track of timeline.tracks) {
+    if (track.kind !== "graphic") continue;
+    for (const clip of track.clips) {
+      if (frame >= clip.startFrame && frame < clipEndFrame(clip)) {
+        active.push({ clip, localFrame: frame - clip.startFrame });
+      }
+    }
+  }
+  return active;
+}
+
+export interface EntranceState {
+  alpha: number;
+  offsetY: number;
+  scale: number;
+  /** 0..1 raw progress (typewriter character reveal). */
+  progress: number;
+}
+
+/**
+ * Shared entrance-animation math for text and graphic layers. The Remotion
+ * composition mirrors this exactly (preview/export parity).
+ */
+export function entranceState(
+  anim: TextAnimation,
+  localFrame: number,
+): EntranceState {
+  const p =
+    anim.preset === "none"
+      ? 1
+      : Math.min(localFrame / anim.durationInFrames, 1);
+  const easeOut = 1 - (1 - p) ** 3;
+  switch (anim.preset) {
+    case "fade-in":
+      return { alpha: easeOut, offsetY: 0, scale: 1, progress: p };
+    case "slide-up":
+      return { alpha: easeOut, offsetY: (1 - easeOut) * 60, scale: 1, progress: p };
+    case "pop":
+      return {
+        alpha: Math.min(p * 2, 1),
+        offsetY: 0,
+        scale: 0.8 + 0.2 * easeOut,
+        progress: p,
+      };
+    default:
+      return { alpha: 1, offsetY: 0, scale: 1, progress: p };
+  }
 }
 
 /** Every clip with audio covering the frame: video clips plus audio clips. */

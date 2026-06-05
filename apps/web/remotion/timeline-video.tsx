@@ -1,5 +1,11 @@
-import type { AudioTrack, TextTrack, VideoTrack } from "@clipline/timeline";
+import type {
+  AudioTrack,
+  GraphicTrack,
+  TextTrack,
+  VideoTrack,
+} from "@clipline/timeline";
 import { AbsoluteFill, Audio, Sequence } from "remotion";
+import { GraphicLayer } from "./graphic-layer";
 import { TextLayer } from "./text-layer";
 import type { TimelineVideoProps } from "./props";
 import { VideoTrackLayer } from "./video-track";
@@ -19,6 +25,9 @@ export function TimelineVideo({ timeline, assetUrls }: TimelineVideoProps) {
   );
   const textTracks = timeline.tracks.filter(
     (t): t is TextTrack => t.kind === "text",
+  );
+  const graphicTracks = timeline.tracks.filter(
+    (t): t is GraphicTrack => t.kind === "graphic",
   );
 
   return (
@@ -47,6 +56,19 @@ export function TimelineVideo({ timeline, assetUrls }: TimelineVideoProps) {
             </Sequence>
           );
         }),
+      )}
+
+      {/* graphics sit above video, below text */}
+      {graphicTracks.map((track) =>
+        track.clips.map((clip) => (
+          <Sequence
+            key={clip.id}
+            from={clip.startFrame}
+            durationInFrames={clip.durationInFrames}
+          >
+            <GraphicLayer clip={clip} />
+          </Sequence>
+        )),
       )}
 
       {textTracks.map((track) =>

@@ -151,7 +151,11 @@ export function ClipBlock({
 
       {/* name */}
       <span className="label-mono pointer-events-none absolute top-1 left-2 max-w-[calc(100%-1rem)] truncate text-foreground/80">
-        {clip.kind === "text" ? clip.text : (asset?.originalFilename ?? clip.kind)}
+        {clip.kind === "text"
+          ? clip.text
+          : clip.kind === "graphic"
+            ? clip.graphic.preset
+            : (asset?.originalFilename ?? clip.kind)}
       </span>
 
       {/* trim handles */}

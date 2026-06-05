@@ -1,6 +1,7 @@
 import {
   clipDurationInFrames,
   clipEndFrame,
+  graphicParamsSchema,
   MAX_DURATION_IN_FRAMES,
   type AudioClip,
   type Clip,
@@ -168,7 +169,7 @@ export function trimClip(
   const next = index < clips.length - 1 ? clips[index + 1] : null;
 
   let updated: Clip;
-  if (clip.kind === "text") {
+  if (clip.kind === "text" || clip.kind === "graphic") {
     if (edge === "start") {
       const minStart = prev ? clipEndFrame(prev) : 0;
       const maxStart = clip.startFrame + clip.durationInFrames - 1;
@@ -243,7 +244,7 @@ export function splitClip(
   const offset = atFrame - start;
   let left: Clip;
   let right: Clip;
-  if (clip.kind === "text") {
+  if (clip.kind === "text" || clip.kind === "graphic") {
     left = { ...clip, durationInFrames: offset };
     right = {
       ...clip,
@@ -339,6 +340,57 @@ export function ensureTextTrack(timeline: Timeline): Timeline {
   };
 }
 
+/** Default duration for a new graphic clip: 4 seconds. */
+export const DEFAULT_GRAPHIC_DURATION = 120;
+
+export type GraphicPreset = Clip extends infer C
+  ? C extends { kind: "graphic"; graphic: { preset: infer P } }
+    ? P
+    : never
+  : never;
+
+/** Add a graphic clip (preset defaults from the schema) on the graphic track. */
+export function addGraphicClip(
+  timeline: Timeline,
+  wantedStart: number,
+  preset: GraphicPreset,
+): Timeline | null {
+  const track = timeline.tracks.find((t) => t.kind === "graphic");
+  if (!track) return null;
+  const start = findFreeStart(track, wantedStart, DEFAULT_GRAPHIC_DURATION);
+  if (start == null) return null;
+
+  // schema defaults fill in the per-preset params
+  const graphic = graphicParamsSchema.parse({ preset });
+  const clip: Clip = {
+    id: crypto.randomUUID(),
+    kind: "graphic",
+    startFrame: start,
+    durationInFrames: DEFAULT_GRAPHIC_DURATION,
+    opacity: preset === "overlay" ? 0.35 : 1,
+    graphic,
+  };
+  return mapTrack(timeline, track.id, (t) => ({
+    ...t,
+    clips: sortClips([...(t.clips as Clip[]), clip]) as never,
+  }));
+}
+
+/** Guarantee a graphic track exists (older projects predate it). */
+export function ensureGraphicTrack(timeline: Timeline): Timeline {
+  if (timeline.tracks.some((t) => t.kind === "graphic")) return timeline;
+  const textIndex = timeline.tracks.findIndex((t) => t.kind === "text");
+  const tracks = [...timeline.tracks];
+  // graphics sit under text, above video
+  tracks.splice(textIndex + 1, 0, {
+    id: crypto.randomUUID(),
+    kind: "graphic",
+    name: "G1",
+    clips: [],
+  });
+  return { ...timeline, tracks };
+}
+
 /**
  * The clip immediately after this one on the same track with no gap —
  * the only legal target for a transition.
@@ -366,13 +418,16 @@ export function removeClip(timeline: Timeline, clipId: string): Timeline {
   };
 }
 
-/** Default track set for a fresh project: text, two video tracks, audio. */
+/** Default track set: text, graphics, two video tracks, audio. */
 export function withDefaultTracks(timeline: Timeline): Timeline {
-  if (timeline.tracks.length > 0) return ensureTextTrack(timeline);
+  if (timeline.tracks.length > 0) {
+    return ensureGraphicTrack(ensureTextTrack(timeline));
+  }
   return {
     ...timeline,
     tracks: [
       { id: crypto.randomUUID(), kind: "text", name: "T1", clips: [] },
+      { id: crypto.randomUUID(), kind: "graphic", name: "G1", clips: [] },
       { id: crypto.randomUUID(), kind: "video", name: "V2", clips: [] },
       { id: crypto.randomUUID(), kind: "video", name: "V1", clips: [] },
       { id: crypto.randomUUID(), kind: "audio", name: "A1", clips: [] },

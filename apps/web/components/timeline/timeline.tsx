@@ -1,8 +1,23 @@
 "use client";
 
 import { FPS, MAX_DURATION_IN_FRAMES } from "@clipline/timeline";
-import { Minus, Plus, Scissors, Trash2, Type } from "lucide-react";
+import { Minus, Plus, Scissors, Shapes, Trash2, Type } from "lucide-react";
 import { toast } from "sonner";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import type { GraphicPreset } from "@/lib/timeline-ops";
+
+const GRAPHIC_PRESETS: Array<{ preset: GraphicPreset; label: string }> = [
+  { preset: "lower-third", label: "Lower third" },
+  { preset: "badge", label: "Day badge" },
+  { preset: "progress-bar", label: "Progress bar" },
+  { preset: "overlay", label: "Color overlay" },
+  { preset: "shape", label: "Shape" },
+];
 import { useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import type { Asset } from "@/lib/api";
@@ -22,6 +37,7 @@ export function Timeline({ assets }: { assets: Asset[] }) {
   const select = useTimelineStore((s) => s.select);
   const setPlayhead = useTimelineStore((s) => s.setPlayhead);
   const addText = useTimelineStore((s) => s.addTextAtPlayhead);
+  const addGraphic = useTimelineStore((s) => s.addGraphicAtPlayhead);
   const duration = useTimelineStore(selectDuration);
 
   const assetsById = useMemo(
@@ -119,6 +135,37 @@ export function Timeline({ assets }: { assets: Asset[] }) {
           >
             <Type className="size-3.5" />
           </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Add graphic at playhead"
+                  title="Add graphic at playhead"
+                >
+                  <Shapes className="size-3.5" />
+                </Button>
+              }
+            />
+            <DropdownMenuContent align="start">
+              {GRAPHIC_PRESETS.map(({ preset, label }) => (
+                <DropdownMenuItem
+                  key={preset}
+                  onClick={() => {
+                    if (!addGraphic(preset)) {
+                      toast.error("No room for a graphic here", {
+                        description:
+                          "The graphics track is occupied at the playhead position.",
+                      });
+                    }
+                  }}
+                >
+                  {label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
         <Timecode />
         <div className="flex items-center gap-1">

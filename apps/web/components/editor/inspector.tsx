@@ -2,6 +2,8 @@
 
 import {
   FPS,
+  type GraphicClip,
+  type TextAnimation,
   type TextClip,
   type Transition,
   type VideoClip,
@@ -68,6 +70,73 @@ function Section({
       <h3 className="label-mono text-muted-foreground">{title}</h3>
       {children}
     </section>
+  );
+}
+
+function ColorRow({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className="label-mono text-muted-foreground">{label}</span>
+      <input
+        type="color"
+        value={value}
+        aria-label={label}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-7 w-12 cursor-pointer rounded-md border border-border bg-transparent p-0.5"
+      />
+    </div>
+  );
+}
+
+/** Entrance animation preset + duration, shared by text and graphic clips. */
+function AnimationControls({
+  animation,
+  presets,
+  onChange,
+}: {
+  animation: TextAnimation;
+  presets: readonly string[];
+  onChange: (a: TextAnimation) => void;
+}) {
+  return (
+    <>
+      <Select
+        value={animation.preset}
+        onValueChange={(v) =>
+          onChange({ ...animation, preset: v as TextAnimation["preset"] })
+        }
+      >
+        <SelectTrigger className="w-full" size="sm">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {presets.map((a) => (
+            <SelectItem key={a} value={a}>
+              {a}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {animation.preset !== "none" && (
+        <SliderRow
+          label="Duration"
+          value={animation.durationInFrames}
+          min={5}
+          max={90}
+          step={1}
+          display={`${(animation.durationInFrames / FPS).toFixed(2)}s`}
+          onChange={(v) => onChange({ ...animation, durationInFrames: v })}
+        />
+      )}
+    </>
   );
 }
 
@@ -303,6 +372,248 @@ function TextInspector({ clip }: { clip: TextClip }) {
   );
 }
 
+const GRAPHIC_ANIMATIONS = ["none", "fade-in", "slide-up", "pop"] as const;
+
+function GraphicInspector({ clip }: { clip: GraphicClip }) {
+  const update = useTimelineStore((s) => s.updateClip);
+  const g = clip.graphic;
+  const patch = (params: Partial<GraphicClip["graphic"]>) =>
+    update(clip.id, {
+      graphic: { ...g, ...params } as GraphicClip["graphic"],
+    });
+
+  return (
+    <>
+      <Section title={g.preset.replace("-", " ")}>
+        {g.preset === "overlay" && (
+          <>
+            <ColorRow
+              label="Color"
+              value={g.color}
+              onChange={(v) => patch({ color: v })}
+            />
+            <Select
+              value={g.colorB ? "gradient" : "solid"}
+              onValueChange={(v) =>
+                patch({ colorB: v === "gradient" ? "#FFFFFF" : null })
+              }
+            >
+              <SelectTrigger className="w-full" size="sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="solid">solid</SelectItem>
+                <SelectItem value="gradient">gradient</SelectItem>
+              </SelectContent>
+            </Select>
+            {g.colorB && (
+              <>
+                <ColorRow
+                  label="Color B"
+                  value={g.colorB}
+                  onChange={(v) => patch({ colorB: v })}
+                />
+                <SliderRow
+                  label="Angle"
+                  value={g.angleDeg}
+                  min={0}
+                  max={360}
+                  step={5}
+                  display={`${g.angleDeg}°`}
+                  onChange={(v) => patch({ angleDeg: v })}
+                />
+              </>
+            )}
+          </>
+        )}
+
+        {g.preset === "shape" && (
+          <>
+            <Select
+              value={g.shape}
+              onValueChange={(v) => patch({ shape: v as typeof g.shape })}
+            >
+              <SelectTrigger className="w-full" size="sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(["rect", "circle", "line"] as const).map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {s}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <ColorRow
+              label="Color"
+              value={g.color}
+              onChange={(v) => patch({ color: v })}
+            />
+            <SliderRow
+              label="X"
+              value={g.position.x}
+              min={0}
+              max={1}
+              step={0.01}
+              onChange={(v) => patch({ position: { ...g.position, x: v } })}
+            />
+            <SliderRow
+              label="Y"
+              value={g.position.y}
+              min={0}
+              max={1}
+              step={0.01}
+              onChange={(v) => patch({ position: { ...g.position, y: v } })}
+            />
+            <SliderRow
+              label="Width"
+              value={g.size.w}
+              min={0.01}
+              max={1}
+              step={0.01}
+              onChange={(v) => patch({ size: { ...g.size, w: v } })}
+            />
+            <SliderRow
+              label="Height"
+              value={g.size.h}
+              min={0.005}
+              max={1}
+              step={0.005}
+              onChange={(v) => patch({ size: { ...g.size, h: v } })}
+            />
+          </>
+        )}
+
+        {g.preset === "progress-bar" && (
+          <>
+            <ColorRow
+              label="Color"
+              value={g.color}
+              onChange={(v) => patch({ color: v })}
+            />
+            <SliderRow
+              label="Thickness"
+              value={g.thickness}
+              min={2}
+              max={120}
+              step={1}
+              display={`${g.thickness}px`}
+              onChange={(v) => patch({ thickness: v })}
+            />
+            <Select
+              value={g.edge}
+              onValueChange={(v) => patch({ edge: v as typeof g.edge })}
+            >
+              <SelectTrigger className="w-full" size="sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="top">top</SelectItem>
+                <SelectItem value="bottom">bottom</SelectItem>
+              </SelectContent>
+            </Select>
+          </>
+        )}
+
+        {g.preset === "lower-third" && (
+          <>
+            <ColorRow
+              label="Band"
+              value={g.color}
+              onChange={(v) => patch({ color: v })}
+            />
+            <ColorRow
+              label="Accent"
+              value={g.accentColor}
+              onChange={(v) => patch({ accentColor: v })}
+            />
+            <SliderRow
+              label="Height"
+              value={g.height}
+              min={0.02}
+              max={0.3}
+              step={0.005}
+              onChange={(v) => patch({ height: v })}
+            />
+            <SliderRow
+              label="Y"
+              value={g.y}
+              min={0}
+              max={1}
+              step={0.01}
+              onChange={(v) => patch({ y: v })}
+            />
+          </>
+        )}
+
+        {g.preset === "badge" && (
+          <>
+            <Input
+              value={g.label}
+              onChange={(e) => patch({ label: e.target.value })}
+            />
+            <ColorRow
+              label="Pill"
+              value={g.color}
+              onChange={(v) => patch({ color: v })}
+            />
+            <ColorRow
+              label="Text"
+              value={g.textColor}
+              onChange={(v) => patch({ textColor: v })}
+            />
+            <SliderRow
+              label="Size"
+              value={g.fontSize}
+              min={16}
+              max={120}
+              step={2}
+              display={`${g.fontSize}px`}
+              onChange={(v) => patch({ fontSize: v })}
+            />
+            <SliderRow
+              label="X"
+              value={g.position.x}
+              min={0}
+              max={1}
+              step={0.01}
+              onChange={(v) => patch({ position: { ...g.position, x: v } })}
+            />
+            <SliderRow
+              label="Y"
+              value={g.position.y}
+              min={0}
+              max={1}
+              step={0.01}
+              onChange={(v) => patch({ position: { ...g.position, y: v } })}
+            />
+          </>
+        )}
+      </Section>
+
+      <Section title="Appearance">
+        <SliderRow
+          label="Opacity"
+          value={clip.opacity}
+          min={0}
+          max={1}
+          step={0.01}
+          onChange={(v) => update(clip.id, { opacity: v })}
+        />
+        {(g.preset === "shape" ||
+          g.preset === "lower-third" ||
+          g.preset === "badge") && (
+          <AnimationControls
+            animation={g.animation}
+            presets={GRAPHIC_ANIMATIONS}
+            onChange={(animation) => patch({ animation })}
+          />
+        )}
+      </Section>
+    </>
+  );
+}
+
 export function Inspector() {
   const clip = useTimelineStore(selectSelectedClip);
   const update = useTimelineStore((s) => s.updateClip);
@@ -334,6 +645,7 @@ export function Inspector() {
       </div>
       {clip.kind === "video" && <VideoInspector clip={clip} />}
       {clip.kind === "text" && <TextInspector clip={clip} />}
+      {clip.kind === "graphic" && <GraphicInspector clip={clip} />}
       {clip.kind === "audio" && (
         <Section title="Audio">
           <SliderRow

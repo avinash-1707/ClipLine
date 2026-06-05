@@ -6,10 +6,13 @@ import {
 } from "@clipline/timeline";
 import { useTimelineStore } from "@/store/timeline";
 import {
+  entranceState,
   gradeToFilter,
   resolveAudio,
+  resolveGraphics,
   resolveTexts,
   resolveVideoLayers,
+  type ActiveGraphic,
   type ActiveText,
   type ActiveVideo,
 } from "./resolve";
@@ -267,9 +270,122 @@ export class PreviewEngine {
       }
     }
 
+    for (const graphic of resolveGraphics(timeline, playheadFrame)) {
+      this.drawGraphic(graphic);
+    }
+
     for (const text of resolveTexts(timeline, playheadFrame)) {
       this.drawText(text);
     }
+  }
+
+  /** Draw a graphic clip. Math mirrors the Remotion graphic layer exactly. */
+  private drawGraphic({ clip, localFrame }: ActiveGraphic) {
+    const { ctx } = this;
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+    const g = clip.graphic;
+
+    ctx.save();
+    ctx.globalAlpha = clip.opacity;
+
+    switch (g.preset) {
+      case "overlay": {
+        if (g.colorB) {
+          // CSS linear-gradient convention: 0deg = to top, clockwise
+          const rad = (g.angleDeg * Math.PI) / 180;
+          const dirX = Math.sin(rad);
+          const dirY = -Math.cos(rad);
+          const len = Math.abs(w * dirX) + Math.abs(h * dirY);
+          const cx = w / 2;
+          const cy = h / 2;
+          const grad = ctx.createLinearGradient(
+            cx - (dirX * len) / 2,
+            cy - (dirY * len) / 2,
+            cx + (dirX * len) / 2,
+            cy + (dirY * len) / 2,
+          );
+          grad.addColorStop(0, g.color);
+          grad.addColorStop(1, g.colorB);
+          ctx.fillStyle = grad;
+        } else {
+          ctx.fillStyle = g.color;
+        }
+        ctx.fillRect(0, 0, w, h);
+        break;
+      }
+
+      case "shape": {
+        const e = entranceState(g.animation, localFrame);
+        ctx.globalAlpha = clip.opacity * e.alpha;
+        const sw = g.size.w * w * e.scale;
+        const sh = g.size.h * h * e.scale;
+        const x = g.position.x * w;
+        const y = g.position.y * h + e.offsetY;
+        ctx.fillStyle = g.color;
+        if (g.shape === "circle") {
+          ctx.beginPath();
+          ctx.ellipse(x, y, sw / 2, sh / 2, 0, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (g.shape === "line") {
+          ctx.fillRect(x - sw / 2, y - Math.max(sh * 0.06, 2) / 2, sw, Math.max(sh * 0.06, 2));
+        } else {
+          ctx.fillRect(x - sw / 2, y - sh / 2, sw, sh);
+        }
+        break;
+      }
+
+      case "progress-bar": {
+        const duration = clip.durationInFrames;
+        const p = duration > 1 ? localFrame / (duration - 1) : 1;
+        const y = g.edge === "top" ? 0 : h - g.thickness;
+        ctx.fillStyle = g.color;
+        ctx.fillRect(0, y, w * p, g.thickness);
+        break;
+      }
+
+      case "lower-third": {
+        const e = entranceState(g.animation, localFrame);
+        ctx.globalAlpha = clip.opacity * e.alpha;
+        const bandH = g.height * h;
+        const y = g.y * h + e.offsetY;
+        ctx.fillStyle = g.color;
+        ctx.fillRect(0, y, w, bandH);
+        // accent edge along the top of the band
+        ctx.fillStyle = g.accentColor;
+        ctx.fillRect(0, y, w, Math.max(bandH * 0.06, 4));
+        break;
+      }
+
+      case "badge": {
+        const e = entranceState(g.animation, localFrame);
+        ctx.globalAlpha = clip.opacity * e.alpha;
+        const x = g.position.x * w;
+        const y = g.position.y * h + e.offsetY;
+        ctx.font = `600 ${g.fontSize}px ${this.fontFamily}`;
+        const textW = ctx.measureText(g.label).width;
+        const padX = g.fontSize * 0.6;
+        const padY = g.fontSize * 0.35;
+        const bw = (textW + padX * 2) * e.scale;
+        const bh = (g.fontSize + padY * 2) * e.scale;
+        const r = bh / 2; // pill
+        ctx.fillStyle = g.color;
+        ctx.beginPath();
+        ctx.roundRect(x - bw / 2, y - bh / 2, bw, bh, r);
+        ctx.fill();
+        ctx.fillStyle = g.textColor;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.scale(e.scale, e.scale);
+        ctx.fillText(g.label, 0, 0);
+        ctx.restore();
+        break;
+      }
+    }
+
+    ctx.restore();
   }
 
   /** Draw one video layer cover-fit with its color grade. */
@@ -300,36 +416,14 @@ export class PreviewEngine {
   /** Draw a text clip with its entrance animation. */
   private drawText({ clip, localFrame }: ActiveText) {
     const { ctx } = this;
-    const anim = clip.animation;
-    const p =
-      anim.preset === "none"
-        ? 1
-        : Math.min(localFrame / anim.durationInFrames, 1);
-    const easeOut = 1 - (1 - p) ** 3;
-
-    let alpha = 1;
-    let offsetY = 0;
-    let scale = 1;
-    let text = clip.text;
-    switch (anim.preset) {
-      case "fade-in":
-        alpha = easeOut;
-        break;
-      case "slide-up":
-        alpha = easeOut;
-        offsetY = (1 - easeOut) * 60;
-        break;
-      case "pop":
-        alpha = Math.min(p * 2, 1);
-        scale = 0.8 + 0.2 * easeOut;
-        break;
-      case "typewriter":
-        text = clip.text.slice(
-          0,
-          Math.ceil(clip.text.length * p),
-        );
-        break;
-    }
+    const { alpha, offsetY, scale, progress } = entranceState(
+      clip.animation,
+      localFrame,
+    );
+    const text =
+      clip.animation.preset === "typewriter"
+        ? clip.text.slice(0, Math.ceil(clip.text.length * progress))
+        : clip.text;
 
     const x = clip.position.x * this.canvas.width;
     const y = clip.position.y * this.canvas.height + offsetY;
