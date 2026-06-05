@@ -1,5 +1,6 @@
 import { ArrowUpRight } from "lucide-react";
 import Link from "next/link";
+import { SmoothScroll } from "@/components/landing/smooth-scroll";
 import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
@@ -32,6 +33,7 @@ const SPECS = [
 export default function LandingPage() {
   return (
     <div className="relative flex min-h-screen flex-col bg-background text-foreground">
+      <SmoothScroll />
       {/* Nav */}
       <header
         className="rise mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-8"
