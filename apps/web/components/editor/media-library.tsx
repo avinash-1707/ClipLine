@@ -11,7 +11,8 @@ import {
   Upload,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { api, type Asset } from "@/lib/api";
@@ -28,24 +29,51 @@ export function MediaLibrary({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
 
   const assets = useAssets(projectId);
 
   const upload = useMutation({
     mutationFn: (file: File) => api.assets.upload(projectId, file),
-    onSuccess: () => {
-      setUploadError(null);
+    onSuccess: (asset) => {
+      toast.success(`${asset.originalFilename} uploaded`, {
+        description: "Processing — thumbnail and waveform on the way.",
+      });
       queryClient.invalidateQueries({ queryKey: ["assets", projectId] });
     },
-    onError: (error) => setUploadError(error.message),
+    onError: (error, file) =>
+      toast.error(`Couldn't upload ${file.name}`, {
+        description: error.message,
+      }),
   });
 
   const remove = useMutation({
     mutationFn: api.assets.delete,
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: ["assets", projectId] }),
+    onSuccess: () => {
+      toast.success("Asset deleted");
+      queryClient.invalidateQueries({ queryKey: ["assets", projectId] });
+    },
+    onError: (error) =>
+      toast.error("Couldn't delete asset", { description: error.message }),
   });
+
+  // toast ingest completions/failures by diffing statuses between polls
+  const prevStatuses = useRef<Map<string, string>>(new Map());
+  useEffect(() => {
+    if (!assets.data) return;
+    for (const asset of assets.data) {
+      const prev = prevStatuses.current.get(asset.id);
+      if (prev === "processing" && asset.status === "ready") {
+        toast.success(`${asset.originalFilename} is ready`, {
+          description: "Drag it onto the timeline.",
+        });
+      } else if (prev === "processing" && asset.status === "failed") {
+        toast.error(`${asset.originalFilename} failed to process`, {
+          description: asset.error ?? "unknown ingest error",
+        });
+      }
+      prevStatuses.current.set(asset.id, asset.status);
+    }
+  }, [assets.data]);
 
   const handleFiles = useCallback(
     (files: FileList | null) => {
@@ -157,11 +185,6 @@ export function MediaLibrary({ projectId }: { projectId: string }) {
           </ScrollArea>
         )}
 
-        {uploadError && (
-          <p className="border-t border-border px-3 py-2 text-xs text-destructive">
-            {uploadError}
-          </p>
-        )}
       </div>
     </div>
   );
@@ -213,13 +236,19 @@ function AssetCard({
       </div>
 
       {/* meta */}
-      <div className="min-w-0 flex-1">
+      <div
+        className="min-w-0 flex-1"
+        title={asset.status === "failed" ? (asset.error ?? "ingest failed") : undefined}
+      >
         <p className="truncate text-xs font-medium">{asset.originalFilename}</p>
-        <p className="label-mono mt-0.5 text-muted-foreground">
+        <p
+          className="label-mono mt-0.5 text-muted-foreground data-failed:text-destructive"
+          data-failed={asset.status === "failed" || undefined}
+        >
           {asset.status === "processing"
             ? "Processing…"
             : asset.status === "failed"
-              ? "Failed"
+              ? "Failed — hover for details"
               : `${asset.kind} · ${formatFrames(asset.durationInFrames)}`}
         </p>
       </div>

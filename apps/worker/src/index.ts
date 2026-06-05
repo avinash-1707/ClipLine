@@ -37,3 +37,11 @@ async function shutdown() {
 }
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
+
+// keep the process alive on stray async failures; BullMQ owns job errors
+process.on("unhandledRejection", (reason) => {
+  console.error("unhandled rejection:", reason);
+});
+process.on("uncaughtException", (error) => {
+  console.error("uncaught exception:", error);
+});

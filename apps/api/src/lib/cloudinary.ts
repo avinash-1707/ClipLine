@@ -1,5 +1,6 @@
 import { v2 as cloudinary } from "cloudinary";
 import { env } from "./env";
+import { AppError } from "./errors";
 
 let configured = false;
 
@@ -57,7 +58,12 @@ export async function uploadBuffer(
       },
       (error, result) => {
         if (error || !result) {
-          reject(error ?? new Error("cloudinary upload returned no result"));
+          reject(
+            new AppError(
+              502,
+              `media storage upload failed: ${error?.message ?? "no result returned"}`,
+            ),
+          );
           return;
         }
         resolve({ publicId: result.public_id, url: result.secure_url });

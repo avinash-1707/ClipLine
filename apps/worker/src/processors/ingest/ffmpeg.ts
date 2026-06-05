@@ -2,7 +2,19 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { FPS } from "@clipline/timeline";
 
-const run = promisify(execFile);
+const execFileAsync = promisify(execFile);
+
+/** Run a media tool; on failure surface the tail of stderr, which is where
+ * ffmpeg/ffprobe put the actual reason. */
+async function run(cmd: string, args: string[]) {
+  try {
+    return await execFileAsync(cmd, args);
+  } catch (error) {
+    const stderr = (error as { stderr?: string }).stderr ?? "";
+    const tail = stderr.trim().split("\n").slice(-3).join(" ").slice(0, 300);
+    throw new Error(`${cmd} failed: ${tail || (error as Error).message}`);
+  }
+}
 
 export interface ProbeResult {
   durationSeconds: number;

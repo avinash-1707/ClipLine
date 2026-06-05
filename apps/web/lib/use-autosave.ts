@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { useTimelineStore } from "@/store/timeline";
 
@@ -32,6 +33,13 @@ export function useAutosave() {
           }
         } catch (error) {
           console.error("timeline save failed:", error);
+          // toast once per failure streak, not on every retry
+          if (useTimelineStore.getState().saveState !== "error") {
+            toast.error("Couldn't save your timeline", {
+              description:
+                error instanceof Error ? error.message : "save failed",
+            });
+          }
           setSaveState("error");
         }
       }, DEBOUNCE_MS);

@@ -2,6 +2,7 @@
 
 import { clipDurationInFrames, type Clip } from "@clipline/timeline";
 import { useRef } from "react";
+import { toast } from "sonner";
 import { useTimelineStore } from "@/store/timeline";
 import type { Asset } from "@/lib/api";
 
@@ -55,8 +56,13 @@ export function ClipBlock({
       if (raf) cancelAnimationFrame(raf);
       el.style.transform = "";
       const deltaFrames = Math.round(dx / pxPerFrame);
-      if (deltaFrames !== 0) {
-        commitMove(clip.id, trackId, clip.startFrame + deltaFrames);
+      if (
+        deltaFrames !== 0 &&
+        !commitMove(clip.id, trackId, clip.startFrame + deltaFrames)
+      ) {
+        toast.error("No room there", {
+          description: "The clip snapped back — the target spot is occupied.",
+        });
       }
     };
     el.addEventListener("pointermove", onMove);

@@ -7,6 +7,7 @@ import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
 import { fail, ok } from "../lib/respond";
+import { validationHook } from "../lib/validate";
 import {
   createProject,
   deleteProject,
@@ -25,12 +26,12 @@ export const projectRoutes = new Hono()
     return ok(c, await listProjects());
   })
 
-  .post("/", zValidator("json", nameBody), async (c) => {
+  .post("/", zValidator("json", nameBody, validationHook), async (c) => {
     const { name } = c.req.valid("json");
     return ok(c, await createProject(name), 201);
   })
 
-  .get("/:id", zValidator("param", idParam), async (c) => {
+  .get("/:id", zValidator("param", idParam, validationHook), async (c) => {
     const { id } = c.req.valid("param");
     const project = await getProject(id);
     if (!project) return fail(c, "project not found", 404);
@@ -39,8 +40,8 @@ export const projectRoutes = new Hono()
 
   .patch(
     "/:id",
-    zValidator("param", idParam),
-    zValidator("json", nameBody),
+    zValidator("param", idParam, validationHook),
+    zValidator("json", nameBody, validationHook),
     async (c) => {
       const { id } = c.req.valid("param");
       const { name } = c.req.valid("json");
@@ -52,8 +53,8 @@ export const projectRoutes = new Hono()
 
   .put(
     "/:id/timeline",
-    zValidator("param", idParam),
-    zValidator("json", timelineSchema),
+    zValidator("param", idParam, validationHook),
+    zValidator("json", timelineSchema, validationHook),
     async (c) => {
       const { id } = c.req.valid("param");
       const timeline = c.req.valid("json");
@@ -71,7 +72,7 @@ export const projectRoutes = new Hono()
     },
   )
 
-  .delete("/:id", zValidator("param", idParam), async (c) => {
+  .delete("/:id", zValidator("param", idParam, validationHook), async (c) => {
     const { id } = c.req.valid("param");
     const deleted = await deleteProject(id);
     if (!deleted) return fail(c, "project not found", 404);

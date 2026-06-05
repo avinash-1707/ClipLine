@@ -2,6 +2,7 @@
 
 import type { Track } from "@clipline/timeline";
 import { useState } from "react";
+import { toast } from "sonner";
 import { useTimelineStore } from "@/store/timeline";
 import type { Asset } from "@/lib/api";
 import { ASSET_DRAG_TYPE } from "./drag-types";
@@ -43,7 +44,11 @@ export function TrackRow({
             kind: "video" | "audio";
           };
           if (kind !== track.kind) return;
-          addClip(track.id, assetId, frameFromEvent(e));
+          if (!addClip(track.id, assetId, frameFromEvent(e))) {
+            toast.error("No room on this track", {
+              description: "The clip doesn't fit within the 2-minute limit.",
+            });
+          }
         } catch {
           // malformed drag payload — ignore
         }

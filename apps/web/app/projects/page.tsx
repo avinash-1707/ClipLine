@@ -5,6 +5,7 @@ import { Clapperboard, Film, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { toast } from "sonner";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import {
@@ -42,12 +43,18 @@ export default function ProjectsPage() {
       queryClient.invalidateQueries({ queryKey: ["projects"] });
       router.push(`/editor/${project.id}`);
     },
+    onError: (error) =>
+      toast.error("Couldn't create project", { description: error.message }),
   });
 
   const remove = useMutation({
     mutationFn: api.projects.delete,
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: ["projects"] }),
+    onSuccess: () => {
+      toast.success("Project deleted");
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
+    },
+    onError: (error) =>
+      toast.error("Couldn't delete project", { description: error.message }),
   });
 
   return (

@@ -4,6 +4,7 @@ import { z } from "zod";
 import { isCloudinaryConfigured, uploadBuffer } from "../lib/cloudinary";
 import { enqueueIngest } from "../lib/queues";
 import { fail, ok } from "../lib/respond";
+import { validationHook } from "../lib/validate";
 import {
   createAsset,
   deleteAsset,
@@ -24,7 +25,7 @@ function assetKindFromMime(mime: string): "video" | "audio" | null {
 /** Mounted at /projects/:projectId/assets */
 export const projectAssetRoutes = new Hono()
 
-  .get("/", zValidator("param", projectIdParam), async (c) => {
+  .get("/", zValidator("param", projectIdParam, validationHook), async (c) => {
     const { projectId } = c.req.valid("param");
     if (!(await getProject(projectId))) {
       return fail(c, "project not found", 404);
@@ -32,7 +33,7 @@ export const projectAssetRoutes = new Hono()
     return ok(c, await listAssets(projectId));
   })
 
-  .post("/", zValidator("param", projectIdParam), async (c) => {
+  .post("/", zValidator("param", projectIdParam, validationHook), async (c) => {
     if (!isCloudinaryConfigured()) {
       return fail(
         c,
@@ -83,14 +84,14 @@ export const projectAssetRoutes = new Hono()
 /** Mounted at /assets */
 export const assetRoutes = new Hono()
 
-  .get("/:id", zValidator("param", idParam), async (c) => {
+  .get("/:id", zValidator("param", idParam, validationHook), async (c) => {
     const { id } = c.req.valid("param");
     const asset = await getAsset(id);
     if (!asset) return fail(c, "asset not found", 404);
     return ok(c, asset);
   })
 
-  .delete("/:id", zValidator("param", idParam), async (c) => {
+  .delete("/:id", zValidator("param", idParam, validationHook), async (c) => {
     const { id } = c.req.valid("param");
     const deleted = await deleteAsset(id);
     if (!deleted) return fail(c, "asset not found", 404);

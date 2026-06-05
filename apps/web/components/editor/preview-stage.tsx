@@ -1,12 +1,12 @@
 "use client";
 
-import { Pause, Play, SkipBack } from "lucide-react";
+import { Clapperboard, Pause, Play, SkipBack } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { Timecode } from "@/components/timeline/timecode";
 import { Button } from "@/components/ui/button";
 import type { Asset } from "@/lib/api";
 import { PreviewEngine } from "@/lib/preview/engine";
-import { useTimelineStore } from "@/store/timeline";
+import { selectDuration, useTimelineStore } from "@/store/timeline";
 
 /**
  * Center 9:16 stage: a 1080x1920 canvas the PreviewEngine composites into,
@@ -17,6 +17,7 @@ export function PreviewStage({ assets }: { assets: Asset[] }) {
   const engineRef = useRef<PreviewEngine | null>(null);
   const isPlaying = useTimelineStore((s) => s.isPlaying);
   const setPlayhead = useTimelineStore((s) => s.setPlayhead);
+  const isEmpty = useTimelineStore((s) => selectDuration(s) === 0);
 
   useEffect(() => {
     const engine = new PreviewEngine(canvasRef.current!);
@@ -53,12 +54,22 @@ export function PreviewStage({ assets }: { assets: Asset[] }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-muted/20">
-      <div className="flex min-h-0 flex-1 items-center justify-center p-4">
+      <div className="relative flex min-h-0 flex-1 items-center justify-center p-4">
         <canvas
           ref={canvasRef}
           className="max-h-full max-w-full rounded-lg border border-border shadow-[0_16px_48px_-16px_rgb(0_0_0/0.5)]"
           style={{ aspectRatio: "9 / 16" }}
         />
+        {/* empty state: nothing on the timeline to composite */}
+        {isEmpty && (
+          <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2.5">
+            <Clapperboard
+              className="size-5 text-white/25"
+              strokeWidth={1.5}
+            />
+            <p className="label-mono text-white/30">Nothing to preview yet</p>
+          </div>
+        )}
       </div>
 
       {/* transport */}

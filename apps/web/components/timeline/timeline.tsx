@@ -2,6 +2,7 @@
 
 import { FPS, MAX_DURATION_IN_FRAMES } from "@clipline/timeline";
 import { Minus, Plus, Scissors, Trash2, Type } from "lucide-react";
+import { toast } from "sonner";
 import { useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import type { Asset } from "@/lib/api";
@@ -107,7 +108,14 @@ export function Timeline({ assets }: { assets: Asset[] }) {
             size="icon-sm"
             aria-label="Add text at playhead"
             title="Add text at playhead"
-            onClick={addText}
+            onClick={() => {
+              if (!addText()) {
+                toast.error("No room for text here", {
+                  description:
+                    "The text track is occupied at the playhead position.",
+                });
+              }
+            }}
           >
             <Type className="size-3.5" />
           </Button>
@@ -167,6 +175,14 @@ export function Timeline({ assets }: { assets: Asset[] }) {
             </div>
             <Playhead />
           </div>
+          {/* empty state: no clips anywhere yet */}
+          {duration === 0 && (
+            <div className="pointer-events-none absolute inset-0 top-7 flex items-center justify-center">
+              <p className="label-mono text-muted-foreground/70">
+                Drag media from the library onto a track to start cutting
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </div>

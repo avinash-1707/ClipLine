@@ -39,13 +39,16 @@ interface TimelineStore {
   setSaveState: (s: SaveState) => void;
   setPlaying: (playing: boolean) => void;
 
-  addClip: (trackId: string, assetId: string, startFrame: number) => void;
-  moveClip: (clipId: string, trackId: string, startFrame: number) => void;
+  /** Returns false when there is no room within the duration limit. */
+  addClip: (trackId: string, assetId: string, startFrame: number) => boolean;
+  /** Returns false when the move target has no room. */
+  moveClip: (clipId: string, trackId: string, startFrame: number) => boolean;
   trimClip: (clipId: string, edge: "start" | "end", delta: number) => void;
   splitSelectedAtPlayhead: () => void;
   removeSelected: () => void;
   updateClip: (clipId: string, patch: Partial<Clip>) => void;
-  addTextAtPlayhead: () => void;
+  /** Returns false when the text track has no room at the playhead. */
+  addTextAtPlayhead: () => boolean;
 }
 
 function mutate(
@@ -100,19 +103,24 @@ export const useTimelineStore = create<TimelineStore>((set, get) => ({
 
   setPlaying: (isPlaying) => set({ isPlaying }),
 
-  addClip: (trackId, assetId, startFrame) =>
-    set((s) => {
-      const asset = s.assetsById[assetId];
-      if (!s.timeline || !asset) return {};
-      return mutate(s, addClipFromAsset(s.timeline, trackId, asset, startFrame));
-    }),
+  addClip: (trackId, assetId, startFrame) => {
+    const s = get();
+    const asset = s.assetsById[assetId];
+    if (!s.timeline || !asset) return false;
+    const next = addClipFromAsset(s.timeline, trackId, asset, startFrame);
+    if (!next) return false;
+    set(mutate(s, next));
+    return true;
+  },
 
-  moveClip: (clipId, trackId, startFrame) =>
-    set((s) =>
-      s.timeline
-        ? mutate(s, moveClip(s.timeline, clipId, trackId, startFrame))
-        : {},
-    ),
+  moveClip: (clipId, trackId, startFrame) => {
+    const s = get();
+    if (!s.timeline) return false;
+    const next = moveClip(s.timeline, clipId, trackId, startFrame);
+    if (!next) return false;
+    set(mutate(s, next));
+    return true;
+  },
 
   trimClip: (clipId, edge, delta) =>
     set((s) => {
@@ -147,19 +155,20 @@ export const useTimelineStore = create<TimelineStore>((set, get) => ({
       s.timeline ? mutate(s, updateClip(s.timeline, clipId, patch)) : {},
     ),
 
-  addTextAtPlayhead: () =>
-    set((s) => {
-      if (!s.timeline) return {};
-      const next = addTextClip(s.timeline, s.playheadFrame);
-      if (!next) return {};
-      // select the clip just added so the inspector opens on it
-      const track = next.tracks.find((t) => t.kind === "text")!;
-      const added = (track.clips as Clip[]).find(
-        (c) => !(s.timeline!.tracks.find((t) => t.kind === "text")
-          ?.clips as Clip[] | undefined)?.some((p) => p.id === c.id),
-      );
-      return { ...mutate(s, next), selectedClipId: added?.id ?? null };
-    }),
+  addTextAtPlayhead: () => {
+    const s = get();
+    if (!s.timeline) return false;
+    const next = addTextClip(s.timeline, s.playheadFrame);
+    if (!next) return false;
+    // select the clip just added so the inspector opens on it
+    const track = next.tracks.find((t) => t.kind === "text")!;
+    const added = (track.clips as Clip[]).find(
+      (c) => !(s.timeline!.tracks.find((t) => t.kind === "text")
+        ?.clips as Clip[] | undefined)?.some((p) => p.id === c.id),
+    );
+    set({ ...mutate(s, next), selectedClipId: added?.id ?? null });
+    return true;
+  },
 }));
 
 /** The currently selected clip, or null. */

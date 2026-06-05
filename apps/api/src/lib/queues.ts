@@ -9,6 +9,7 @@ import {
 } from "@clipline/jobs";
 import { Queue, QueueEvents } from "bullmq";
 import IORedis from "ioredis";
+import { AppError } from "./errors";
 import { markAssetFailed, markAssetReady } from "../services/assets";
 import {
   markRenderCompleted,
@@ -31,20 +32,34 @@ export const renderEvents = new EventEmitter();
 renderEvents.setMaxListeners(100);
 
 export async function enqueueRender(job: RenderJob) {
-  await renderQueue.add("render", job, {
-    jobId: job.renderJobId,
-    removeOnComplete: 100,
-    removeOnFail: 100,
-  });
+  try {
+    await renderQueue.add("render", job, {
+      jobId: job.renderJobId,
+      // renders are expensive — no automatic retry, the user retries
+      removeOnComplete: 100,
+      removeOnFail: 100,
+    });
+  } catch (error) {
+    console.error("render enqueue failed:", error);
+    throw new AppError(503, "job queue is unavailable — is redis running?");
+  }
 }
 
 export async function enqueueIngest(job: IngestJob) {
-  await ingestQueue.add("ingest", job, {
-    // jobId = assetId so queue events map back to the asset row
-    jobId: job.assetId,
-    removeOnComplete: 100,
-    removeOnFail: 100,
-  });
+  try {
+    await ingestQueue.add("ingest", job, {
+      // jobId = assetId so queue events map back to the asset row
+      jobId: job.assetId,
+      // transient ffmpeg/network hiccups get one retry with backoff
+      attempts: 2,
+      backoff: { type: "exponential", delay: 3000 },
+      removeOnComplete: 100,
+      removeOnFail: 100,
+    });
+  } catch (error) {
+    console.error("ingest enqueue failed:", error);
+    throw new AppError(503, "job queue is unavailable — is redis running?");
+  }
 }
 
 /**

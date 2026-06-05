@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { env } from "./lib/env";
+import { handleError } from "./lib/errors";
 import { startQueueEventListeners } from "./lib/queues";
 import { fail } from "./lib/respond";
 import { assetRoutes, projectAssetRoutes } from "./routes/assets";
@@ -24,9 +25,13 @@ app.route("/render-jobs", renderJobRoutes);
 startQueueEventListeners();
 
 app.notFound((c) => fail(c, "not found", 404));
-app.onError((err, c) => {
-  console.error(err);
-  return fail(c, "internal server error", 500);
+app.onError(handleError);
+
+process.on("unhandledRejection", (reason) => {
+  console.error("unhandled rejection:", reason);
+});
+process.on("uncaughtException", (error) => {
+  console.error("uncaught exception:", error);
 });
 
 serve({ fetch: app.fetch, port: env.PORT }, (info) => {

@@ -11,6 +11,7 @@ import { z } from "zod";
 import { isCloudinaryConfigured } from "../lib/cloudinary";
 import { enqueueRender, renderEvents } from "../lib/queues";
 import { fail, ok } from "../lib/respond";
+import { validationHook } from "../lib/validate";
 import { getAsset } from "../services/assets";
 import { getProject } from "../services/projects";
 import { createRenderJob, getRenderJob } from "../services/render-jobs";
@@ -21,7 +22,7 @@ const projectIdParam = z.object({ projectId: z.uuid() });
 /** Mounted at /projects/:projectId/render */
 export const projectRenderRoutes = new Hono().post(
   "/",
-  zValidator("param", projectIdParam),
+  zValidator("param", projectIdParam, validationHook),
   async (c) => {
     if (!isCloudinaryConfigured()) {
       return fail(c, "media storage is not configured", 503);
@@ -69,14 +70,14 @@ export const projectRenderRoutes = new Hono().post(
 /** Mounted at /render-jobs */
 export const renderJobRoutes = new Hono()
 
-  .get("/:id", zValidator("param", idParam), async (c) => {
+  .get("/:id", zValidator("param", idParam, validationHook), async (c) => {
     const { id } = c.req.valid("param");
     const job = await getRenderJob(id);
     if (!job) return fail(c, "render job not found", 404);
     return ok(c, job);
   })
 
-  .get("/:id/progress", zValidator("param", idParam), async (c) => {
+  .get("/:id/progress", zValidator("param", idParam, validationHook), async (c) => {
     const { id } = c.req.valid("param");
     const job = await getRenderJob(id);
     if (!job) return fail(c, "render job not found", 404);

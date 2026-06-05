@@ -26,21 +26,32 @@ export async function uploadFile(
       },
       (error, result) => {
         if (error || !result) {
-          reject(error ?? new Error("cloudinary upload returned no result"));
+          reject(
+            new Error(
+              `cloudinary upload failed (${options.folder}): ${error?.message ?? "no result returned"}`,
+            ),
+          );
           return;
         }
         resolve({ publicId: result.public_id, url: result.secure_url });
       },
     );
-    createReadStream(filePath).pipe(stream);
+    createReadStream(filePath).on("error", reject).pipe(stream);
   });
 }
 
 /** Download a Cloudinary delivery URL to a local scratch path. */
 export async function downloadToFile(url: string, destPath: string) {
-  const response = await fetch(url);
+  let response: Response;
+  try {
+    response = await fetch(url);
+  } catch (error) {
+    throw new Error(
+      `source download failed — network error: ${(error as Error).message}`,
+    );
+  }
   if (!response.ok || !response.body) {
-    throw new Error(`download failed (${response.status}): ${url}`);
+    throw new Error(`source download failed (HTTP ${response.status})`);
   }
   const { writeFile } = await import("node:fs/promises");
   await writeFile(destPath, Buffer.from(await response.arrayBuffer()));
