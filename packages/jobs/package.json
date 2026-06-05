@@ -1,0 +1,19 @@
+{
+  "name": "@clipline/jobs",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@clipline/config": "workspace:*",
+    "typescript": "^6.0.3"
+  }
+}

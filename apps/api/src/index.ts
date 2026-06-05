@@ -3,7 +3,9 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { env } from "./lib/env";
+import { startQueueEventListeners } from "./lib/queues";
 import { fail } from "./lib/respond";
+import { assetRoutes, projectAssetRoutes } from "./routes/assets";
 import { projectRoutes } from "./routes/projects";
 
 const app = new Hono();
@@ -13,6 +15,10 @@ app.use(cors());
 
 app.get("/health", (c) => c.json({ data: { status: "ok" } }));
 app.route("/projects", projectRoutes);
+app.route("/projects/:projectId/assets", projectAssetRoutes);
+app.route("/assets", assetRoutes);
+
+startQueueEventListeners();
 
 app.notFound((c) => fail(c, "not found", 404));
 app.onError((err, c) => {

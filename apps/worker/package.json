@@ -9,8 +9,10 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@clipline/jobs": "workspace:*",
     "@clipline/timeline": "workspace:*",
     "bullmq": "^5.78.0",
+    "cloudinary": "^2.10.0",
     "ioredis": "^5.11.1",
     "zod": "^4.4.3"
   },

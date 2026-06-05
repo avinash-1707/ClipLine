@@ -2,6 +2,10 @@ packages:
   - "apps/*"
   - "packages/*"
 
+# single ioredis instance — bullmq pins an older one, which splits types
+overrides:
+  ioredis: ^5.11.1
+
 onlyBuiltDependencies:
   - esbuild
   - msgpackr-extract

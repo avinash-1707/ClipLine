@@ -11,11 +11,15 @@
     "db:migrate": "drizzle-kit migrate"
   },
   "dependencies": {
+    "@clipline/jobs": "workspace:*",
     "@clipline/timeline": "workspace:*",
     "@hono/node-server": "^2.0.4",
     "@hono/zod-validator": "^0.8.0",
+    "bullmq": "^5.78.0",
+    "cloudinary": "^2.10.0",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.12.23",
+    "ioredis": "^5.11.1",
     "pg": "^8.21.0",
     "zod": "^4.4.3"
   },
