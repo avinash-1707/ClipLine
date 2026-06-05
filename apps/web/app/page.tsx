@@ -1,5 +1,6 @@
-import { ArrowUpRight, Clapperboard } from "lucide-react";
+import { ArrowUpRight } from "lucide-react";
 import Link from "next/link";
+import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 
@@ -37,7 +38,7 @@ export default function LandingPage() {
         style={{ "--rise": 0 } as React.CSSProperties}
       >
         <div className="flex items-center gap-2.5">
-          <Clapperboard className="size-4.5" strokeWidth={1.75} />
+          <Logo className="size-4.5" />
           <span className="text-[15px] font-medium tracking-tight">
             Clipline
           </span>
@@ -47,6 +48,7 @@ export default function LandingPage() {
           <Button
             variant="outline"
             size="sm"
+            nativeButton={false}
             render={<Link href="/projects" />}
           >
             Open editor
@@ -87,6 +89,7 @@ export default function LandingPage() {
               <Button
                 size="lg"
                 className="group"
+                nativeButton={false}
                 render={<Link href="/projects" />}
               >
                 Start editing

@@ -129,6 +129,7 @@ export function ExportDialog({
             </p>
             <Button
               className="w-full"
+              nativeButton={false}
               render={
                 <a
                   href={phase.outputUrl}

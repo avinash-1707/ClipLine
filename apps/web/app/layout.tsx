@@ -21,9 +21,20 @@ const instrumentSerif = Instrument_Serif({
 });
 
 export const metadata: Metadata = {
-  title: "Clipline — the vertical video editor",
+  title: {
+    default: "Clipline: the vertical video editor",
+    template: "%s · Clipline",
+  },
   description:
-    "A local-first editor for Reels, Shorts and TikTok. Cut, caption, grade and export 1080x1920 — preview and export are pixel-identical.",
+    "A local-first editor for Reels, Shorts and TikTok. Cut, caption, grade and export 1080x1920 vertical video. What you preview is exactly what ships.",
+  applicationName: "Clipline",
+  keywords: [
+    "video editor",
+    "vertical video",
+    "reels",
+    "shorts",
+    "timeline editing",
+  ],
 };
 
 export default function RootLayout({

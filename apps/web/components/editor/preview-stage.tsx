@@ -1,7 +1,8 @@
 "use client";
 
-import { Clapperboard, Pause, Play, SkipBack } from "lucide-react";
+import { Pause, Play, SkipBack } from "lucide-react";
 import { useEffect, useRef } from "react";
+import { Logo } from "@/components/logo";
 import { Timecode } from "@/components/timeline/timecode";
 import { Button } from "@/components/ui/button";
 import type { Asset } from "@/lib/api";
@@ -63,10 +64,7 @@ export function PreviewStage({ assets }: { assets: Asset[] }) {
         {/* empty state: nothing on the timeline to composite */}
         {isEmpty && (
           <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2.5">
-            <Clapperboard
-              className="size-5 text-white/25"
-              strokeWidth={1.5}
-            />
+            <Logo className="size-5 text-white/25" />
             <p className="label-mono text-white/30">Nothing to preview yet</p>
           </div>
         )}

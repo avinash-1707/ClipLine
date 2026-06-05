@@ -1,8 +1,9 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Clapperboard, Film, Plus, Trash2 } from "lucide-react";
+import { Film, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
+import { Logo } from "@/components/logo";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -61,7 +62,7 @@ export default function ProjectsPage() {
     <div className="flex min-h-screen flex-col bg-background text-foreground">
       <header className="mx-auto flex w-full max-w-4xl items-center justify-between px-6 py-5">
         <Link href="/" className="flex items-center gap-2.5">
-          <Clapperboard className="size-4.5" strokeWidth={1.75} />
+          <Logo className="size-4.5" />
           <span className="text-[15px] font-medium tracking-tight">
             Clipline
           </span>

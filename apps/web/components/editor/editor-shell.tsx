@@ -1,8 +1,9 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Clapperboard } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
+import { Logo } from "@/components/logo";
 import { useEffect, useState } from "react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Timeline } from "@/components/timeline/timeline";
@@ -97,7 +98,12 @@ export function EditorShell({ projectId }: { projectId: string }) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background">
         <p className="text-sm text-muted-foreground">Project not found.</p>
-        <Button variant="outline" size="sm" render={<Link href="/projects" />}>
+        <Button
+          variant="outline"
+          size="sm"
+          nativeButton={false}
+          render={<Link href="/projects" />}
+        >
           <ArrowLeft className="size-4" />
           Back to projects
         </Button>
@@ -114,12 +120,13 @@ export function EditorShell({ projectId }: { projectId: string }) {
             variant="ghost"
             size="icon"
             aria-label="Back to projects"
+            nativeButton={false}
             render={<Link href="/projects" />}
           >
             <ArrowLeft className="size-4" />
           </Button>
           <div className="flex items-center gap-2 pl-1">
-            <Clapperboard className="size-4" strokeWidth={1.75} />
+            <Logo className="size-4" />
             <span className="max-w-48 truncate text-sm font-medium tracking-tight">
               {project.data?.name ?? "…"}
             </span>
