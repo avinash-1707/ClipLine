@@ -11,6 +11,8 @@
   "dependencies": {
     "@clipline/jobs": "workspace:*",
     "@clipline/timeline": "workspace:*",
+    "@remotion/bundler": "^4.0.473",
+    "@remotion/renderer": "^4.0.473",
     "bullmq": "^5.78.0",
     "cloudinary": "^2.10.0",
     "ioredis": "^5.11.1",
