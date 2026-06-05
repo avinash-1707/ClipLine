@@ -36,3 +36,26 @@ export const ingestResultSchema = z.object({
 
 export type IngestJob = z.infer<typeof ingestJobSchema>;
 export type IngestResult = z.infer<typeof ingestResultSchema>;
+
+// ---------------------------------------------------------------------------
+// Render
+// ---------------------------------------------------------------------------
+
+export const renderJobSchema = z.object({
+  renderJobId: z.uuid(),
+  projectId: z.uuid(),
+  /** Validated against @clipline/timeline by the API before enqueue and by
+   * the worker before render. Kept loose here to avoid a schema dependency
+   * between queue plumbing and the timeline package. */
+  timeline: z.unknown(),
+  /** assetId -> normalized Cloudinary URL for every asset the timeline uses. */
+  assetUrls: z.record(z.string(), z.url()),
+});
+
+export const renderResultSchema = z.object({
+  outputPublicId: z.string().min(1),
+  outputUrl: z.url(),
+});
+
+export type RenderJob = z.infer<typeof renderJobSchema>;
+export type RenderResult = z.infer<typeof renderResultSchema>;

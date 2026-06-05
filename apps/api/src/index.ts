@@ -7,6 +7,7 @@ import { startQueueEventListeners } from "./lib/queues";
 import { fail } from "./lib/respond";
 import { assetRoutes, projectAssetRoutes } from "./routes/assets";
 import { projectRoutes } from "./routes/projects";
+import { projectRenderRoutes, renderJobRoutes } from "./routes/render";
 
 const app = new Hono();
 
@@ -17,6 +18,8 @@ app.get("/health", (c) => c.json({ data: { status: "ok" } }));
 app.route("/projects", projectRoutes);
 app.route("/projects/:projectId/assets", projectAssetRoutes);
 app.route("/assets", assetRoutes);
+app.route("/projects/:projectId/render", projectRenderRoutes);
+app.route("/render-jobs", renderJobRoutes);
 
 startQueueEventListeners();
 

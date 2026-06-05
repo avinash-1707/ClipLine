@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Clapperboard } from "lucide-react";
 import Link from "next/link";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Timeline } from "@/components/timeline/timeline";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import { api } from "@/lib/api";
 import { useAssets } from "@/lib/use-assets";
 import { useAutosave } from "@/lib/use-autosave";
 import { useTimelineStore, type SaveState } from "@/store/timeline";
+import { ExportDialog } from "./export-dialog";
 import { Inspector } from "./inspector";
 import { MediaLibrary } from "./media-library";
 import { PreviewStage } from "./preview-stage";
@@ -33,6 +34,32 @@ function SaveBadge() {
     >
       {SAVE_LABEL[saveState]}
     </span>
+  );
+}
+
+function ExportButton({ projectId }: { projectId: string }) {
+  const [open, setOpen] = useState(false);
+  const hasContent = useTimelineStore(
+    (s) => (s.timeline?.tracks.some((t) => t.clips.length > 0) ?? false),
+  );
+  return (
+    <>
+      <Button
+        size="sm"
+        disabled={!hasContent}
+        title={hasContent ? "Render and download" : "Timeline is empty"}
+        onClick={() => setOpen(true)}
+      >
+        Export
+      </Button>
+      {open && (
+        <ExportDialog
+          projectId={projectId}
+          open={open}
+          onOpenChange={setOpen}
+        />
+      )}
+    </>
   );
 }
 
@@ -104,9 +131,7 @@ export function EditorShell({ projectId }: { projectId: string }) {
             1080 × 1920 · 30fps
           </span>
           <ThemeToggle />
-          <Button size="sm" disabled title="Export arrives with the render unit">
-            Export
-          </Button>
+          <ExportButton projectId={projectId} />
         </div>
       </header>
 

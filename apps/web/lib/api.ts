@@ -36,6 +36,18 @@ export interface Asset {
   updatedAt: string;
 }
 
+export interface RenderJob {
+  id: string;
+  projectId: string;
+  status: "queued" | "rendering" | "completed" | "failed";
+  progress: number;
+  outputPublicId: string | null;
+  outputUrl: string | null;
+  error: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, init);
   const body = (await res.json().catch(() => null)) as
@@ -71,6 +83,13 @@ export const api = {
       }),
     delete: (id: string) =>
       request<{ id: string }>(`/projects/${id}`, { method: "DELETE" }),
+  },
+  render: {
+    start: (projectId: string) =>
+      request<RenderJob>(`/projects/${projectId}/render`, { method: "POST" }),
+    get: (id: string) => request<RenderJob>(`/render-jobs/${id}`),
+    /** SSE endpoint URL for EventSource. */
+    progressUrl: (id: string) => `${API_URL}/render-jobs/${id}/progress`,
   },
   assets: {
     list: (projectId: string) =>
