@@ -1,0 +1,176 @@
+"use client";
+
+import { FPS, MAX_DURATION_IN_FRAMES } from "@clipline/timeline";
+import { Minus, Plus, Scissors, Trash2 } from "lucide-react";
+import { useEffect, useMemo } from "react";
+import { Button } from "@/components/ui/button";
+import type { Asset } from "@/lib/api";
+import { selectDuration, useTimelineStore } from "@/store/timeline";
+import { Playhead } from "./playhead";
+import { Ruler } from "./ruler";
+import { TrackRow } from "./track-row";
+
+function Timecode() {
+  const frame = useTimelineStore((s) => s.playheadFrame);
+  const m = Math.floor(frame / FPS / 60);
+  const s = Math.floor(frame / FPS) % 60;
+  const f = frame % FPS;
+  return (
+    <span className="label-mono tabular-nums text-muted-foreground">
+      {String(m).padStart(2, "0")}:{String(s).padStart(2, "0")}:
+      {String(f).padStart(2, "0")}
+    </span>
+  );
+}
+
+export function Timeline({ assets }: { assets: Asset[] }) {
+  const timeline = useTimelineStore((s) => s.timeline);
+  const pxPerFrame = useTimelineStore((s) => s.pxPerFrame);
+  const setZoom = useTimelineStore((s) => s.setZoom);
+  const hasSelection = useTimelineStore((s) => s.selectedClipId !== null);
+  const split = useTimelineStore((s) => s.splitSelectedAtPlayhead);
+  const removeSelected = useTimelineStore((s) => s.removeSelected);
+  const select = useTimelineStore((s) => s.select);
+  const setPlayhead = useTimelineStore((s) => s.setPlayhead);
+  const duration = useTimelineStore(selectDuration);
+
+  const assetsById = useMemo(
+    () => new Map(assets.map((a) => [a.id, a])),
+    [assets],
+  );
+
+  // Keyboard: S split, Delete remove, arrows nudge playhead. Instant, no motion.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const target = e.target as HTMLElement;
+      if (target.closest("input, textarea, [contenteditable]")) return;
+      const state = useTimelineStore.getState();
+      switch (e.key) {
+        case "s":
+        case "S":
+          split();
+          break;
+        case "Delete":
+        case "Backspace":
+          removeSelected();
+          break;
+        case "ArrowLeft":
+          e.preventDefault();
+          setPlayhead(state.playheadFrame - (e.shiftKey ? 10 : 1));
+          break;
+        case "ArrowRight":
+          e.preventDefault();
+          setPlayhead(state.playheadFrame + (e.shiftKey ? 10 : 1));
+          break;
+        case "Escape":
+          select(null);
+          break;
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [split, removeSelected, setPlayhead, select]);
+
+  if (!timeline) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <span className="label-mono text-muted-foreground/60">
+          Loading timeline…
+        </span>
+      </div>
+    );
+  }
+
+  // canvas width: content + 10 s of headroom, capped at the duration limit
+  const contentFrames = Math.min(
+    Math.max(duration + 10 * FPS, 60 * FPS),
+    MAX_DURATION_IN_FRAMES,
+  );
+  const widthPx = contentFrames * pxPerFrame;
+
+  return (
+    <div className="flex h-full flex-col">
+      {/* toolbar */}
+      <div className="flex h-9 shrink-0 items-center justify-between border-b border-border px-3">
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Split clip at playhead (S)"
+            title="Split at playhead (S)"
+            disabled={!hasSelection}
+            onClick={split}
+          >
+            <Scissors className="size-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Delete selected clip (Del)"
+            title="Delete selected (Del)"
+            disabled={!hasSelection}
+            onClick={removeSelected}
+          >
+            <Trash2 className="size-3.5" />
+          </Button>
+        </div>
+        <Timecode />
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Zoom out"
+            onClick={() => setZoom(pxPerFrame / 1.4)}
+          >
+            <Minus className="size-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Zoom in"
+            onClick={() => setZoom(pxPerFrame * 1.4)}
+          >
+            <Plus className="size-3.5" />
+          </Button>
+        </div>
+      </div>
+
+      {/* gutter + scrollable canvas */}
+      <div className="flex min-h-0 flex-1">
+        <div className="flex w-10 shrink-0 flex-col border-r border-border pt-7">
+          {timeline.tracks.map((t) => (
+            <div
+              key={t.id}
+              className="label-mono flex h-12 items-center justify-center text-muted-foreground"
+              style={{ marginBottom: 8 }}
+            >
+              {t.name}
+            </div>
+          ))}
+        </div>
+
+        <div
+          className="relative min-w-0 flex-1 overflow-x-auto overflow-y-hidden"
+          onPointerDown={(e) => {
+            // click on empty canvas clears selection
+            if (e.target === e.currentTarget) select(null);
+          }}
+        >
+          <div className="relative" style={{ width: widthPx }}>
+            <Ruler widthPx={widthPx} />
+            <div className="space-y-2 py-2">
+              {timeline.tracks.map((track) => (
+                <TrackRow
+                  key={track.id}
+                  track={track}
+                  assetsById={assetsById}
+                />
+              ))}
+            </div>
+            <Playhead />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

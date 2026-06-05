@@ -1,6 +1,8 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { ASSET_DRAG_TYPE } from "@/components/timeline/drag-types";
+import { useAssets } from "@/lib/use-assets";
 import {
   AlertCircle,
   AudioLines,
@@ -28,13 +30,7 @@ export function MediaLibrary({ projectId }: { projectId: string }) {
   const [dragOver, setDragOver] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
-  const assets = useQuery({
-    queryKey: ["assets", projectId],
-    queryFn: () => api.assets.list(projectId),
-    // poll while any asset is still ingesting
-    refetchInterval: (query) =>
-      query.state.data?.some((a) => a.status === "processing") ? 2000 : false,
-  });
+  const assets = useAssets(projectId);
 
   const upload = useMutation({
     mutationFn: (file: File) => api.assets.upload(projectId, file),
@@ -178,6 +174,7 @@ function AssetCard({
   asset: Asset;
   onDelete: () => void;
 }) {
+  const isReady = asset.status === "ready";
   return (
     <motion.li
       layout
@@ -185,7 +182,17 @@ function AssetCard({
       animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
       exit={{ opacity: 0, transition: { duration: 0.12 } }}
       transition={{ duration: 0.18, ease: [0.21, 0.47, 0.32, 0.98] }}
-      className="group flex h-14 items-center gap-3 overflow-hidden rounded-md border border-border bg-card px-2.5 transition-colors hover:bg-muted/40"
+      draggable={isReady}
+      onDragStart={(e) => {
+        const dt = (e as unknown as React.DragEvent).dataTransfer;
+        dt.setData(
+          ASSET_DRAG_TYPE,
+          JSON.stringify({ assetId: asset.id, kind: asset.kind }),
+        );
+        dt.effectAllowed = "copy";
+      }}
+      className="group flex h-14 items-center gap-3 overflow-hidden rounded-md border border-border bg-card px-2.5 transition-colors hover:bg-muted/40 data-ready:cursor-grab"
+      data-ready={isReady || undefined}
     >
       {/* thumb */}
       <div className="flex h-10 w-[26px] shrink-0 items-center justify-center overflow-hidden rounded-sm bg-muted">

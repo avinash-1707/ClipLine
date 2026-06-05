@@ -3,19 +3,68 @@
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Clapperboard } from "lucide-react";
 import Link from "next/link";
+import { useEffect } from "react";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { Timeline } from "@/components/timeline/timeline";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
+import { useAssets } from "@/lib/use-assets";
+import { useAutosave } from "@/lib/use-autosave";
+import { useTimelineStore, type SaveState } from "@/store/timeline";
 import { Inspector } from "./inspector";
 import { MediaLibrary } from "./media-library";
 import { PreviewStage } from "./preview-stage";
-import { TimelineDock } from "./timeline-dock";
+
+const SAVE_LABEL: Record<SaveState, string> = {
+  idle: "",
+  dirty: "Unsaved",
+  saving: "Saving…",
+  saved: "Saved",
+  error: "Save failed",
+};
+
+function SaveBadge() {
+  const saveState = useTimelineStore((s) => s.saveState);
+  if (!SAVE_LABEL[saveState]) return null;
+  return (
+    <span
+      data-error={saveState === "error" || undefined}
+      className="label-mono text-muted-foreground data-error:text-destructive"
+    >
+      {SAVE_LABEL[saveState]}
+    </span>
+  );
+}
 
 export function EditorShell({ projectId }: { projectId: string }) {
   const project = useQuery({
     queryKey: ["project", projectId],
     queryFn: () => api.projects.get(projectId),
   });
+  const assets = useAssets(projectId);
+  const load = useTimelineStore((s) => s.load);
+  const registerAssets = useTimelineStore((s) => s.registerAssets);
+
+  useAutosave();
+
+  // hydrate the store once per project load
+  useEffect(() => {
+    if (project.data) load(project.data.id, project.data.timeline);
+  }, [project.data, load]);
+
+  // timeline ops need asset durations
+  useEffect(() => {
+    if (!assets.data) return;
+    registerAssets(
+      assets.data
+        .filter((a) => a.status === "ready" && a.durationInFrames != null)
+        .map((a) => ({
+          id: a.id,
+          kind: a.kind,
+          durationInFrames: a.durationInFrames!,
+        })),
+    );
+  }, [assets.data, registerAssets]);
 
   if (project.isError) {
     return (
@@ -49,7 +98,8 @@ export function EditorShell({ projectId }: { projectId: string }) {
             </span>
           </div>
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-3">
+          <SaveBadge />
           <span className="label-mono hidden text-muted-foreground sm:block">
             1080 × 1920 · 30fps
           </span>
@@ -76,8 +126,8 @@ export function EditorShell({ projectId }: { projectId: string }) {
       </div>
 
       {/* Timeline dock */}
-      <footer className="h-56 shrink-0 border-t border-border">
-        <TimelineDock />
+      <footer className="h-64 shrink-0 border-t border-border">
+        <Timeline assets={assets.data ?? []} />
       </footer>
     </div>
   );
