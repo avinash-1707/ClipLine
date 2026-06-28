@@ -205,19 +205,25 @@ function AssetCard({
       animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
       exit={{ opacity: 0, transition: { duration: 0.12 } }}
       transition={{ duration: 0.18, ease: [0.21, 0.47, 0.32, 0.98] }}
-      draggable={isReady}
-      onDragStart={(e) => {
-        const dt = (e as unknown as React.DragEvent).dataTransfer;
-        dt.setData(
-          ASSET_DRAG_TYPE,
-          JSON.stringify({ assetId: asset.id, kind: asset.kind }),
-        );
-        dt.effectAllowed = "copy";
-      }}
-      className="group flex h-14 items-center gap-3 overflow-hidden rounded-md border border-border bg-card px-2.5 transition-colors hover:bg-muted/40 data-ready:cursor-grab"
+      className="group h-14 overflow-hidden rounded-md border border-border bg-card transition-colors hover:bg-muted/40 data-ready:cursor-grab"
       data-ready={isReady || undefined}
     >
-      {/* thumb */}
+      {/* Native HTML5 drag lives on a plain element — motion components
+          reserve onDragStart/onDrag/onDragEnd for their own pan gestures
+          and never bind them to the DOM, so the payload would never set. */}
+      <div
+        draggable={isReady}
+        onDragStart={(e) => {
+          const dt = e.dataTransfer;
+          dt.setData(
+            ASSET_DRAG_TYPE,
+            JSON.stringify({ assetId: asset.id, kind: asset.kind }),
+          );
+          dt.effectAllowed = "copy";
+        }}
+        className="flex h-full items-center gap-3 px-2.5"
+      >
+        {/* thumb */}
       <div className="flex h-10 w-[26px] shrink-0 items-center justify-center overflow-hidden rounded-sm bg-muted">
         {asset.status === "processing" ? (
           <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
@@ -262,6 +268,7 @@ function AssetCard({
       >
         <Trash2 className="size-3.5" />
       </Button>
+      </div>
     </motion.li>
   );
 }
