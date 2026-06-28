@@ -1,5 +1,5 @@
 import type { RenderResult } from "@clipline/jobs";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, notInArray } from "drizzle-orm";
 import { db } from "../db/client";
 import { renderJobs } from "../db/schema";
 
@@ -29,10 +29,18 @@ export async function markRenderStarted(id: string) {
 }
 
 export async function updateRenderProgress(id: string, progress: number) {
+  // Never resurrect a finished job: a late progress event must not overwrite a
+  // completed/failed terminal state (events are delivered by independent async
+  // handlers and can land out of order).
   await db
     .update(renderJobs)
     .set({ status: "rendering", progress })
-    .where(eq(renderJobs.id, id));
+    .where(
+      and(
+        eq(renderJobs.id, id),
+        notInArray(renderJobs.status, ["completed", "failed"]),
+      ),
+    );
 }
 
 export async function markRenderCompleted(id: string, result: RenderResult) {

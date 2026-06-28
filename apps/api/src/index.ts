@@ -13,7 +13,7 @@ import { projectRenderRoutes, renderJobRoutes } from "./routes/render";
 const app = new Hono();
 
 app.use(logger());
-app.use(cors());
+app.use(cors({ origin: env.CORS_ORIGIN }));
 
 app.get("/health", (c) => c.json({ data: { status: "ok" } }));
 app.route("/projects", projectRoutes);

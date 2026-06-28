@@ -1,8 +1,9 @@
 import type { IngestResult } from "@clipline/jobs";
+import { stripAssetFromTimeline } from "@clipline/timeline";
 import { desc, eq } from "drizzle-orm";
 import { destroyMedia } from "../lib/cloudinary";
 import { db } from "../db/client";
-import { assets } from "../db/schema";
+import { assets, projects } from "../db/schema";
 
 export async function listAssets(projectId: string) {
   return db
@@ -56,27 +57,51 @@ export async function markAssetFailed(assetId: string, error: string) {
     .where(eq(assets.id, assetId));
 }
 
-/** Delete the asset row and its Cloudinary binaries. */
+/**
+ * Delete the asset row and its Cloudinary binaries. Scrubs every clip that
+ * references the asset from the owning project's timeline in the same
+ * transaction so no dangling reference is left behind (a dangling ref would
+ * silently break preview and hard-fail export).
+ */
 export async function deleteAsset(id: string) {
-  const asset = await getAsset(id);
-  if (!asset) return false;
+  const binaries = await db.transaction(async (tx) => {
+    const [asset] = await tx.select().from(assets).where(eq(assets.id, id));
+    if (!asset) return null;
 
-  const binaries: Array<["video" | "image" | "raw", string | null]> = [
-    ["video", asset.originalPublicId],
-    ["video", asset.normalizedPublicId],
-    ["image", asset.thumbnailPublicId],
-    ["image", asset.waveformPublicId],
-  ];
+    const [project] = await tx
+      .select()
+      .from(projects)
+      .where(eq(projects.id, asset.projectId));
+    if (project) {
+      const stripped = stripAssetFromTimeline(project.timeline, id);
+      if (stripped !== project.timeline) {
+        await tx
+          .update(projects)
+          .set({ timeline: stripped })
+          .where(eq(projects.id, asset.projectId));
+      }
+    }
+
+    await tx.delete(assets).where(eq(assets.id, id));
+    return [
+      ["video", asset.originalPublicId],
+      ["video", asset.normalizedPublicId],
+      ["image", asset.thumbnailPublicId],
+      ["image", asset.waveformPublicId],
+    ] as Array<["video" | "image" | "raw", string | null]>;
+  });
+
+  if (!binaries) return false;
+
+  // Binaries are removed after the row is gone; orphaned binaries are logged,
+  // not fatal — the DB is already consistent.
   for (const [resourceType, publicId] of binaries) {
     if (!publicId) continue;
     try {
       await destroyMedia(publicId, resourceType);
     } catch (error) {
-      // Row deletion proceeds; orphaned binaries are logged, not fatal.
       console.error(`failed to delete ${publicId} from Cloudinary:`, error);
     }
   }
-
-  await db.delete(assets).where(eq(assets.id, id));
   return true;
 }

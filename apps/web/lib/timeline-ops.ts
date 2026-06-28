@@ -244,13 +244,28 @@ export function splitClip(
   const offset = atFrame - start;
   let left: Clip;
   let right: Clip;
-  if (clip.kind === "text" || clip.kind === "graphic") {
+  if (clip.kind === "text") {
     left = { ...clip, durationInFrames: offset };
     right = {
       ...clip,
       id: crypto.randomUUID(),
       startFrame: atFrame,
       durationInFrames: clip.durationInFrames - offset,
+      // the continuation must not replay the entrance animation
+      animation: { ...clip.animation, preset: "none" },
+    };
+  } else if (clip.kind === "graphic") {
+    left = { ...clip, durationInFrames: offset };
+    const graphic =
+      "animation" in clip.graphic
+        ? { ...clip.graphic, animation: { ...clip.graphic.animation, preset: "none" as const } }
+        : clip.graphic;
+    right = {
+      ...clip,
+      id: crypto.randomUUID(),
+      startFrame: atFrame,
+      durationInFrames: clip.durationInFrames - offset,
+      graphic,
     };
   } else {
     const media = clip as VideoClip | AudioClip;
