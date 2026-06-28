@@ -17,6 +17,22 @@ services:
       timeout: 3s
       retries: 10
 
+  migrate:
+    image: node:22-slim
+    container_name: clipline-migrate
+    working_dir: /repo/apps/api
+    environment:
+      DATABASE_URL: postgres://clipline:clipline@postgres:5432/clipline
+    volumes:
+      - .:/repo
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # one-shot: applies pending drizzle migrations, then exits
+    restart: "no"
+    command: >
+      sh -c "corepack enable && pnpm db:migrate"
+
   redis:
     image: redis:8
     container_name: clipline-redis
