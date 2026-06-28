@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 
 const emptySubscribe = () => () => {};
 
-export function ThemeToggle() {
+export function ThemeToggle({ className }: { className?: string }) {
   const { resolvedTheme, setTheme } = useTheme();
   // Theme is unknown until hydration; false on the server, true after mount,
   // without an effect-driven setState.
@@ -21,6 +21,7 @@ export function ThemeToggle() {
     <Button
       variant="ghost"
       size="icon"
+      className={className}
       aria-label="Toggle theme"
       onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
     >
