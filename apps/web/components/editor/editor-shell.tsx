@@ -3,19 +3,23 @@
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
+import { Group, Panel, useDefaultLayout } from "react-resizable-panels";
 import { Logo } from "@/components/logo";
 import { useEffect, useState } from "react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Timeline } from "@/components/timeline/timeline";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
+import { panelStorage } from "@/lib/panel-storage";
 import { useAssets } from "@/lib/use-assets";
 import { useAutosave } from "@/lib/use-autosave";
+import { useMediaQuery } from "@/lib/use-media-query";
 import { useTimelineStore, type SaveState } from "@/store/timeline";
 import { ExportDialog } from "./export-dialog";
 import { Inspector } from "./inspector";
 import { MediaLibrary } from "./media-library";
 import { PreviewStage } from "./preview-stage";
+import { ResizeHandle } from "./resize-handle";
 
 const SAVE_LABEL: Record<SaveState, string> = {
   idle: "",
@@ -72,6 +76,27 @@ export function EditorShell({ projectId }: { projectId: string }) {
   const assets = useAssets(projectId);
   const load = useTimelineStore((s) => s.load);
   const registerAssets = useTimelineStore((s) => s.registerAssets);
+
+  // Side panels collapse on narrow viewports (media < md, inspector < lg).
+  const showMedia = useMediaQuery("(min-width: 768px)");
+  const showInspector = useMediaQuery("(min-width: 1024px)");
+
+  // Persist panel sizes per layout. The horizontal layout is keyed on which
+  // side panels are visible, so each viewport breakpoint remembers its own sizes.
+  const verticalLayout = useDefaultLayout({
+    id: "clipline-editor-vertical-v2",
+    panelIds: ["workspace", "timeline"],
+    storage: panelStorage,
+  });
+  const horizontalLayout = useDefaultLayout({
+    id: "clipline-editor-horizontal-v2",
+    panelIds: [
+      ...(showMedia ? ["media"] : []),
+      "stage",
+      ...(showInspector ? ["inspector"] : []),
+    ],
+    storage: panelStorage,
+  });
 
   useAutosave();
 
@@ -142,25 +167,72 @@ export function EditorShell({ projectId }: { projectId: string }) {
         </div>
       </header>
 
-      {/* Workspace: media | stage | inspector */}
-      <div className="flex min-h-0 flex-1">
-        <aside className="hidden w-72 shrink-0 border-r border-border md:flex md:flex-col">
-          <MediaLibrary projectId={projectId} />
-        </aside>
+      {/* Resizable workspace: (media | stage | inspector) over timeline.
+          Group hard-sets inline height:100%, so it must live inside a
+          flex-1/min-h-0 box or it would take the full viewport (ignoring the
+          header) and overflow. */}
+      <div className="min-h-0 flex-1">
+        <Group
+          orientation="vertical"
+          defaultLayout={verticalLayout.defaultLayout}
+          onLayoutChanged={verticalLayout.onLayoutChanged}
+        >
+          <Panel id="workspace" defaultSize="68%" minSize="40%">
+            <Group
+              orientation="horizontal"
+              defaultLayout={horizontalLayout.defaultLayout}
+              onLayoutChanged={horizontalLayout.onLayoutChanged}
+            >
+            {showMedia && (
+              <>
+                <Panel
+                  id="media"
+                  defaultSize="288px"
+                  minSize="240px"
+                  maxSize="480px"
+                  groupResizeBehavior="preserve-pixel-size"
+                >
+                  <MediaLibrary projectId={projectId} />
+                </Panel>
+                <ResizeHandle orientation="horizontal" />
+              </>
+            )}
 
-        <main className="flex min-w-0 flex-1 flex-col">
-          <PreviewStage assets={assets.data ?? []} />
-        </main>
+            {/* Stage is the flexible filler: no defaultSize → flexGrow:1.
+                The lib panel is display:flex/row (inline, unoverridable), so an
+                explicit h-full column box gives the preview a definite height —
+                without it the 9:16 canvas's max-h-full has nothing to resolve
+                against and overflows vertically. */}
+            <Panel id="stage" minSize="320px">
+              <div className="flex h-full min-h-0 w-full min-w-0 flex-col">
+                <PreviewStage assets={assets.data ?? []} />
+              </div>
+            </Panel>
 
-        <aside className="hidden w-64 shrink-0 border-l border-border lg:flex lg:flex-col">
-          <Inspector />
-        </aside>
+            {showInspector && (
+              <>
+                <ResizeHandle orientation="horizontal" />
+                <Panel
+                  id="inspector"
+                  defaultSize="280px"
+                  minSize="240px"
+                  maxSize="420px"
+                  groupResizeBehavior="preserve-pixel-size"
+                >
+                  <Inspector />
+                </Panel>
+              </>
+            )}
+            </Group>
+          </Panel>
+
+          <ResizeHandle orientation="vertical" />
+
+          <Panel id="timeline" defaultSize="32%" minSize="15%" maxSize="60%">
+            <Timeline assets={assets.data ?? []} />
+          </Panel>
+        </Group>
       </div>
-
-      {/* Timeline dock */}
-      <footer className="h-64 shrink-0 border-t border-border">
-        <Timeline assets={assets.data ?? []} />
-      </footer>
     </div>
   );
 }
