@@ -1,4 +1,7 @@
-import { createReadStream } from "node:fs";
+import { createReadStream, createWriteStream } from "node:fs";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import type { ReadableStream } from "node:stream/web";
 import { v2 as cloudinary } from "cloudinary";
 import { env } from "./env";
 
@@ -53,6 +56,10 @@ export async function downloadToFile(url: string, destPath: string) {
   if (!response.ok || !response.body) {
     throw new Error(`source download failed (HTTP ${response.status})`);
   }
-  const { writeFile } = await import("node:fs/promises");
-  await writeFile(destPath, Buffer.from(await response.arrayBuffer()));
+  // Stream to disk rather than buffering the whole file in memory — source
+  // clips can be hundreds of MB to several GB.
+  await pipeline(
+    Readable.fromWeb(response.body as ReadableStream<Uint8Array>),
+    createWriteStream(destPath),
+  );
 }

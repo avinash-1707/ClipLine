@@ -38,6 +38,9 @@ export async function processIngestJob(job: Job): Promise<IngestResult> {
     if (kind === "video" && !meta.hasVideo) {
       throw new Error("asset uploaded as video but has no video stream");
     }
+    if (kind === "audio" && !meta.hasAudio) {
+      throw new Error("asset uploaded as audio but has no audio stream");
+    }
 
     // Normalize
     const normalizedPath = join(

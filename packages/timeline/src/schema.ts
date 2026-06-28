@@ -10,6 +10,11 @@ export const OUTPUT_HEIGHT = 1920;
 /** Export limit: 120 seconds at 30 fps. */
 export const MAX_DURATION_IN_FRAMES = 120 * FPS;
 
+/** Upper bound on tracks in a timeline (guards against oversized JSONB). */
+export const MAX_TRACKS = 24;
+/** Upper bound on clips per track. */
+export const MAX_CLIPS_PER_TRACK = 1000;
+
 export const TIMELINE_SCHEMA_VERSION = 1;
 
 // ---------------------------------------------------------------------------
@@ -265,6 +270,33 @@ function refineTrackClips(
         path: [i, "sourceOutFrame"],
       });
     }
+    // A transition must target an adjacent next clip and fit inside both clips.
+    if (clip.kind === "video" && clip.transitionToNext) {
+      const transition = clip.transitionToNext;
+      const nextClip = clips[i + 1];
+      if (
+        !nextClip ||
+        nextClip.startFrame !== clip.startFrame + clipDuration(clip)
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          message: `clip ${clip.id}: transitionToNext requires an adjacent next clip`,
+          path: [i, "transitionToNext"],
+        });
+      } else {
+        const maxDuration = Math.min(
+          clipDuration(clip),
+          clipDuration(nextClip),
+        );
+        if (transition.durationInFrames > maxDuration) {
+          ctx.addIssue({
+            code: "custom",
+            message: `clip ${clip.id}: transition duration ${transition.durationInFrames} exceeds adjacent clip length ${maxDuration}`,
+            path: [i, "transitionToNext", "durationInFrames"],
+          });
+        }
+      }
+    }
     if (i === 0) continue;
     const prev = clips[i - 1]!;
     const prevEnd = prev.startFrame + clipDuration(prev);
@@ -285,22 +317,22 @@ const trackBase = z.object({
 
 export const videoTrackSchema = trackBase.extend({
   kind: z.literal("video"),
-  clips: z.array(videoClipSchema).superRefine(refineTrackClips),
+  clips: z.array(videoClipSchema).max(MAX_CLIPS_PER_TRACK).superRefine(refineTrackClips),
 });
 
 export const audioTrackSchema = trackBase.extend({
   kind: z.literal("audio"),
-  clips: z.array(audioClipSchema).superRefine(refineTrackClips),
+  clips: z.array(audioClipSchema).max(MAX_CLIPS_PER_TRACK).superRefine(refineTrackClips),
 });
 
 export const textTrackSchema = trackBase.extend({
   kind: z.literal("text"),
-  clips: z.array(textClipSchema).superRefine(refineTrackClips),
+  clips: z.array(textClipSchema).max(MAX_CLIPS_PER_TRACK).superRefine(refineTrackClips),
 });
 
 export const graphicTrackSchema = trackBase.extend({
   kind: z.literal("graphic"),
-  clips: z.array(graphicClipSchema).superRefine(refineTrackClips),
+  clips: z.array(graphicClipSchema).max(MAX_CLIPS_PER_TRACK).superRefine(refineTrackClips),
 });
 
 export const trackSchema = z.discriminatedUnion("kind", [
@@ -319,5 +351,5 @@ export const timelineSchema = z.object({
   fps: z.literal(FPS),
   width: z.literal(OUTPUT_WIDTH),
   height: z.literal(OUTPUT_HEIGHT),
-  tracks: z.array(trackSchema),
+  tracks: z.array(trackSchema).max(MAX_TRACKS),
 });

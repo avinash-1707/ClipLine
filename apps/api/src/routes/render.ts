@@ -14,7 +14,11 @@ import { fail, ok } from "../lib/respond";
 import { validationHook } from "../lib/validate";
 import { getAsset } from "../services/assets";
 import { getProject } from "../services/projects";
-import { createRenderJob, getRenderJob } from "../services/render-jobs";
+import {
+  createRenderJob,
+  getRenderJob,
+  markRenderFailed,
+} from "../services/render-jobs";
 
 const idParam = z.object({ id: z.uuid() });
 const projectIdParam = z.object({ projectId: z.uuid() });
@@ -50,19 +54,34 @@ export const projectRenderRoutes = new Hono().post(
     const assetUrls: Record<string, string> = {};
     for (const assetId of assetIds) {
       const asset = await getAsset(assetId);
-      if (!asset || asset.status !== "ready" || !asset.normalizedUrl) {
+      if (
+        !asset ||
+        asset.projectId !== projectId ||
+        asset.status !== "ready" ||
+        !asset.normalizedUrl
+      ) {
         return fail(c, `asset ${assetId} is not ready to render`, 422);
       }
       assetUrls[assetId] = asset.normalizedUrl;
     }
 
     const job = await createRenderJob(projectId);
-    await enqueueRender({
-      renderJobId: job.id,
-      projectId,
-      timeline,
-      assetUrls,
-    });
+    // A failed enqueue would otherwise strand the job in "queued" forever;
+    // mark it failed so its status reflects reality.
+    try {
+      await enqueueRender({
+        renderJobId: job.id,
+        projectId,
+        timeline,
+        assetUrls,
+      });
+    } catch (error) {
+      await markRenderFailed(
+        job.id,
+        error instanceof Error ? error.message : "could not queue render",
+      );
+      throw error;
+    }
     return ok(c, job, 201);
   },
 );
@@ -79,23 +98,20 @@ export const renderJobRoutes = new Hono()
 
   .get("/:id/progress", zValidator("param", idParam, validationHook), async (c) => {
     const { id } = c.req.valid("param");
-    const job = await getRenderJob(id);
-    if (!job) return fail(c, "render job not found", 404);
+    if (!(await getRenderJob(id))) {
+      return fail(c, "render job not found", 404);
+    }
 
     return streamSSE(c, async (stream) => {
-      // current state first so late subscribers render correctly
-      await stream.writeSSE({
-        event: "progress",
-        data: JSON.stringify({
-          status: job.status,
-          progress: job.progress,
-          outputUrl: job.outputUrl,
-          error: job.error,
-        }),
-      });
-      if (job.status === "completed" || job.status === "failed") return;
-
       await new Promise<void>((resolveStream) => {
+        let settled = false;
+        const finish = () => {
+          if (settled) return;
+          settled = true;
+          renderEvents.off(id, onEvent);
+          clearInterval(heartbeat);
+          resolveStream();
+        };
         const onEvent = (payload: {
           status: string;
           progress?: number;
@@ -109,17 +125,34 @@ export const renderJobRoutes = new Hono()
             finish();
           }
         };
-        const finish = () => {
-          renderEvents.off(id, onEvent);
-          clearInterval(heartbeat);
-          resolveStream();
-        };
         // keep proxies from closing an idle stream
         const heartbeat = setInterval(() => {
           stream.writeSSE({ event: "ping", data: "" }).catch(() => finish());
         }, 15000);
+
+        // Subscribe BEFORE reading current state: a terminal event fired in the
+        // gap would otherwise be lost, leaving the client hung on the last
+        // percentage. Reading after subscribing closes that race.
         renderEvents.on(id, onEvent);
         stream.onAbort(finish);
+
+        void getRenderJob(id).then((current) => {
+          if (settled || !current) return;
+          stream
+            .writeSSE({
+              event: "progress",
+              data: JSON.stringify({
+                status: current.status,
+                progress: current.progress,
+                outputUrl: current.outputUrl,
+                error: current.error,
+              }),
+            })
+            .catch(() => finish());
+          if (current.status === "completed" || current.status === "failed") {
+            finish();
+          }
+        });
       });
     });
   });

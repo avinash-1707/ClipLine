@@ -14,6 +14,11 @@ const envSchema = z.object({
     .min(1)
     .default("postgres://clipline:clipline@localhost:5432/clipline"),
   REDIS_URL: z.string().min(1).default("redis://localhost:6380"),
+  // Browser origin allowed to call the API. The editor runs on localhost:3000
+  // by default; widen only deliberately (no auth means CORS is the only gate).
+  CORS_ORIGIN: z.string().min(1).default("http://localhost:3000"),
+  // Reject uploads larger than this before buffering them into memory.
+  MAX_UPLOAD_MB: z.coerce.number().int().positive().default(1024),
   // Optional so the API can boot without credentials; upload routes fail
   // with a clear error until they are set (see lib/cloudinary.ts).
   CLOUDINARY_CLOUD_NAME: z.string().min(1).optional(),

@@ -2,6 +2,7 @@ import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
 import { isCloudinaryConfigured, uploadBuffer } from "../lib/cloudinary";
+import { env } from "../lib/env";
 import { enqueueIngest } from "../lib/queues";
 import { fail, ok } from "../lib/respond";
 import { validationHook } from "../lib/validate";
@@ -10,11 +11,13 @@ import {
   deleteAsset,
   getAsset,
   listAssets,
+  markAssetFailed,
 } from "../services/assets";
 import { getProject } from "../services/projects";
 
 const idParam = z.object({ id: z.uuid() });
 const projectIdParam = z.object({ projectId: z.uuid() });
+const MAX_UPLOAD_BYTES = env.MAX_UPLOAD_MB * 1024 * 1024;
 
 function assetKindFromMime(mime: string): "video" | "audio" | null {
   if (mime.startsWith("video/")) return "video";
@@ -46,10 +49,19 @@ export const projectAssetRoutes = new Hono()
       return fail(c, "project not found", 404);
     }
 
+    // Reject oversized uploads before the body is buffered into memory.
+    const contentLength = Number(c.req.header("content-length") ?? 0);
+    if (contentLength > MAX_UPLOAD_BYTES) {
+      return fail(c, `upload exceeds the ${env.MAX_UPLOAD_MB} MB limit`, 413);
+    }
+
     const body = await c.req.parseBody();
     const file = body["file"];
     if (!(file instanceof File)) {
       return fail(c, "multipart field 'file' is required", 400);
+    }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      return fail(c, `upload exceeds the ${env.MAX_UPLOAD_MB} MB limit`, 413);
     }
     const kind = assetKindFromMime(file.type);
     if (!kind) {
@@ -71,12 +83,22 @@ export const projectAssetRoutes = new Hono()
       originalUrl: original.url,
     });
 
-    await enqueueIngest({
-      assetId: asset.id,
-      kind,
-      originalUrl: original.url,
-      originalFilename: file.name,
-    });
+    // If the enqueue fails the row would otherwise sit in "processing" forever;
+    // mark it failed so the client stops polling and surfaces the error.
+    try {
+      await enqueueIngest({
+        assetId: asset.id,
+        kind,
+        originalUrl: original.url,
+        originalFilename: file.name,
+      });
+    } catch (error) {
+      await markAssetFailed(
+        asset.id,
+        error instanceof Error ? error.message : "could not queue ingest",
+      );
+      throw error;
+    }
 
     return ok(c, asset, 201);
   });
