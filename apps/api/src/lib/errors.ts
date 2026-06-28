@@ -1,6 +1,7 @@
 import type { Context } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { ZodError } from "zod";
+import { logger, type AppEnv } from "./logger";
 import { fail } from "./respond";
 
 /** Operational error with an HTTP status — thrown by services/libs, mapped
@@ -28,9 +29,12 @@ export function formatZodError(error: ZodError): string {
 
 /** Global error mapper: AppError -> its status, ZodError -> 422,
  * infrastructure connection failures -> 503, anything else -> 500. */
-export function handleError(err: Error, c: Context) {
+export function handleError(err: Error, c: Context<AppEnv>) {
+  const log = c.get("log") ?? logger;
   if (err instanceof AppError) {
-    if (err.status >= 500) console.error(`[${err.status}]`, err.message);
+    // server faults are logged; client (4xx) AppErrors are returned cleanly,
+    // without log noise.
+    if (err.status >= 500) log.error({ err, status: err.status }, err.message);
     return fail(c, err.message, err.status);
   }
   if (err instanceof ZodError) {
@@ -38,9 +42,9 @@ export function handleError(err: Error, c: Context) {
   }
   const code = (err as NodeJS.ErrnoException).code;
   if (code === "ECONNREFUSED" || code === "ENOTFOUND" || code === "ETIMEDOUT") {
-    console.error("infrastructure unreachable:", err.message);
+    log.warn({ err, code }, "infrastructure unreachable");
     return fail(c, "a backing service is unreachable — is docker compose up?", 503);
   }
-  console.error("unhandled error:", err);
+  log.error({ err }, "unhandled error");
   return fail(c, "internal server error", 500);
 }

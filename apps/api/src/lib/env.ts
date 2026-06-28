@@ -9,6 +9,12 @@ try {
 
 const envSchema = z.object({
   PORT: z.coerce.number().int().positive().default(4000),
+  // Logging is read directly from process.env by @clipline/logger (kept
+  // dependency-free); declared here for discoverability and validation.
+  // LOG_LEVEL: error | warn | info | debug (default info).
+  LOG_LEVEL: z.enum(["error", "warn", "info", "debug"]).optional(),
+  // LOG_PRETTY=true enables human-readable colored output (dev); unset = JSON.
+  LOG_PRETTY: z.enum(["true", "false"]).optional(),
   DATABASE_URL: z
     .string()
     .min(1)

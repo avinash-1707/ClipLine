@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { isCloudinaryConfigured, uploadBuffer } from "../lib/cloudinary";
 import { env } from "../lib/env";
+import { AppError } from "../lib/errors";
 import { enqueueIngest } from "../lib/queues";
 import { fail, ok } from "../lib/respond";
 import { validationHook } from "../lib/validate";
@@ -97,7 +98,9 @@ export const projectAssetRoutes = new Hono()
         asset.id,
         error instanceof Error ? error.message : "could not queue ingest",
       );
-      throw error;
+      // the file did upload; only queueing the ingest failed — don't imply the
+      // upload itself was lost.
+      throw new AppError(503, "uploaded, but couldn't start processing — is redis running?");
     }
 
     return ok(c, asset, 201);

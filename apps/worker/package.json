@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@clipline/jobs": "workspace:*",
+    "@clipline/logger": "workspace:*",
     "@clipline/timeline": "workspace:*",
     "@remotion/bundler": "^4.0.473",
     "@remotion/renderer": "^4.0.473",

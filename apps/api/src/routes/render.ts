@@ -9,6 +9,7 @@ import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import { isCloudinaryConfigured } from "../lib/cloudinary";
+import { AppError } from "../lib/errors";
 import { enqueueRender, renderEvents } from "../lib/queues";
 import { fail, ok } from "../lib/respond";
 import { validationHook } from "../lib/validate";
@@ -35,7 +36,13 @@ export const projectRenderRoutes = new Hono().post(
     const project = await getProject(projectId);
     if (!project) return fail(c, "project not found", 404);
 
-    const timeline = timelineSchema.parse(project.timeline);
+    // The user pressed Export — a schema-path message ("tracks.0.clips…") would
+    // be meaningless here. Surface the real meaning: the project is unrenderable.
+    const parsedTimeline = timelineSchema.safeParse(project.timeline);
+    if (!parsedTimeline.success) {
+      return fail(c, "this project's timeline is invalid and cannot be rendered", 422);
+    }
+    const timeline = parsedTimeline.data;
     const duration = timelineDurationInFrames(timeline);
     if (duration === 0) return fail(c, "timeline is empty", 422);
     if (duration > MAX_DURATION_IN_FRAMES) {
@@ -80,7 +87,9 @@ export const projectRenderRoutes = new Hono().post(
         job.id,
         error instanceof Error ? error.message : "could not queue render",
       );
-      throw error;
+      // the render row exists; only queueing failed — say so rather than a bare
+      // "queue unavailable" that reads like nothing happened.
+      throw new AppError(503, "couldn't start the render — is redis running?");
     }
     return ok(c, job, 201);
   },

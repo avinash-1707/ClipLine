@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { FPS } from "@clipline/timeline";
+import { jobLog } from "../../lib/log-context";
 
 const execFileAsync = promisify(execFile);
 
@@ -12,6 +13,9 @@ async function run(cmd: string, args: string[]) {
   } catch (error) {
     const stderr = (error as { stderr?: string }).stderr ?? "";
     const tail = stderr.trim().split("\n").slice(-3).join(" ").slice(0, 300);
+    // log with the ambient job context (jobId/assetId) before rethrowing —
+    // the throw still carries the same message; logging only observes.
+    jobLog().error({ step: cmd, stderr: tail }, `${cmd} failed`);
     throw new Error(`${cmd} failed: ${tail || (error as Error).message}`);
   }
 }

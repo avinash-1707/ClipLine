@@ -10,6 +10,7 @@ import {
 import { Queue, QueueEvents } from "bullmq";
 import IORedis from "ioredis";
 import { AppError } from "./errors";
+import { logger } from "./logger";
 import { markAssetFailed, markAssetReady } from "../services/assets";
 import {
   markRenderCompleted,
@@ -39,8 +40,12 @@ export async function enqueueRender(job: RenderJob) {
       removeOnComplete: 100,
       removeOnFail: 100,
     });
+    logger.info(
+      { jobId: job.renderJobId, renderJobId: job.renderJobId, projectId: job.projectId },
+      "render job enqueued",
+    );
   } catch (error) {
-    console.error("render enqueue failed:", error);
+    logger.error({ err: error, renderJobId: job.renderJobId }, "render enqueue failed");
     throw new AppError(503, "job queue is unavailable — is redis running?");
   }
 }
@@ -56,8 +61,9 @@ export async function enqueueIngest(job: IngestJob) {
       removeOnComplete: 100,
       removeOnFail: 100,
     });
+    logger.info({ jobId: job.assetId, assetId: job.assetId }, "ingest job enqueued");
   } catch (error) {
-    console.error("ingest enqueue failed:", error);
+    logger.error({ err: error, assetId: job.assetId }, "ingest enqueue failed");
     throw new AppError(503, "job queue is unavailable — is redis running?");
   }
 }
@@ -72,22 +78,32 @@ export function startQueueEventListeners() {
   });
 
   ingestEvents.on("completed", async ({ jobId, returnvalue }) => {
+    const log = logger.child({ jobId, assetId: jobId });
     try {
       const result = ingestResultSchema.parse(returnvalue);
       await markAssetReady(jobId, result);
+      log.info({ status: "ready" }, "asset ingest completed");
     } catch (error) {
-      console.error(`ingest result for asset ${jobId} rejected:`, error);
+      log.error({ err: error }, "ingest result rejected");
       await markAssetFailed(jobId, "worker returned an invalid ingest result");
     }
   });
 
   ingestEvents.on("failed", async ({ jobId, failedReason }) => {
-    console.error(`ingest job ${jobId} failed: ${failedReason}`);
-    await markAssetFailed(jobId, failedReason);
+    // a killed job (OOM, SIGKILL, stalled-reaper) reports an empty reason;
+    // persist something the user can actually read.
+    const reason =
+      failedReason ||
+      "processing failed unexpectedly (the job may have run out of memory or been killed)";
+    logger.child({ jobId, assetId: jobId }).error(
+      { status: "failed", failedReason: reason },
+      "ingest job failed",
+    );
+    await markAssetFailed(jobId, reason);
   });
 
   ingestEvents.on("error", (error) => {
-    console.error("ingest queue events error:", error);
+    logger.error({ err: error }, "ingest queue events error");
   });
 
   const render = new QueueEvents(RENDER_QUEUE, {
@@ -96,38 +112,54 @@ export function startQueueEventListeners() {
 
   render.on("active", async ({ jobId }) => {
     await markRenderStarted(jobId);
+    logger.child({ jobId, renderJobId: jobId }).info({ status: "rendering" }, "render started");
     renderEvents.emit(jobId, { status: "rendering", progress: 0 });
   });
 
   render.on("progress", async ({ jobId, data }) => {
     const progress = typeof data === "number" ? data : 0;
+    // per-percent ticks during a render: debug only, never flood stdout at info
+    logger.child({ jobId, renderJobId: jobId }).debug({ progress }, "render progress");
     renderEvents.emit(jobId, { status: "rendering", progress });
     await updateRenderProgress(jobId, progress);
   });
 
   render.on("completed", async ({ jobId, returnvalue }) => {
+    const log = logger.child({ jobId, renderJobId: jobId });
     try {
       const result = renderResultSchema.parse(returnvalue);
       await markRenderCompleted(jobId, result);
+      log.info({ status: "completed", outputUrl: result.outputUrl }, "render completed");
       renderEvents.emit(jobId, {
         status: "completed",
         progress: 1,
         outputUrl: result.outputUrl,
       });
     } catch (error) {
-      console.error(`render result for job ${jobId} rejected:`, error);
-      await markRenderFailed(jobId, "worker returned an invalid render result");
-      renderEvents.emit(jobId, { status: "failed" });
+      log.error({ err: error }, "render result rejected");
+      const reason = "the render finished but produced an unreadable result";
+      await markRenderFailed(jobId, reason);
+      // emit the same reason we persisted so the export dialog doesn't fall
+      // back to a generic "render failed".
+      renderEvents.emit(jobId, { status: "failed", error: reason });
     }
   });
 
   render.on("failed", async ({ jobId, failedReason }) => {
-    console.error(`render job ${jobId} failed: ${failedReason}`);
-    await markRenderFailed(jobId, failedReason);
-    renderEvents.emit(jobId, { status: "failed", error: failedReason });
+    // a killed render (OOM is common on large timelines) reports an empty
+    // reason; persist and stream something readable instead of a blank line.
+    const reason =
+      failedReason ||
+      "render failed unexpectedly (the job may have run out of memory or been killed)";
+    logger.child({ jobId, renderJobId: jobId }).error(
+      { status: "failed", failedReason: reason },
+      "render job failed",
+    );
+    await markRenderFailed(jobId, reason);
+    renderEvents.emit(jobId, { status: "failed", error: reason });
   });
 
   render.on("error", (error) => {
-    console.error("render queue events error:", error);
+    logger.error({ err: error }, "render queue events error");
   });
 }

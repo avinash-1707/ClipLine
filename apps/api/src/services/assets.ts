@@ -2,6 +2,7 @@ import type { IngestResult } from "@clipline/jobs";
 import { stripAssetFromTimeline } from "@clipline/timeline";
 import { desc, eq } from "drizzle-orm";
 import { destroyMedia } from "../lib/cloudinary";
+import { logger } from "../lib/logger";
 import { db } from "../db/client";
 import { assets, projects } from "../db/schema";
 
@@ -100,7 +101,10 @@ export async function deleteAsset(id: string) {
     try {
       await destroyMedia(publicId, resourceType);
     } catch (error) {
-      console.error(`failed to delete ${publicId} from Cloudinary:`, error);
+      logger.warn(
+        { err: error, publicId, assetId: id },
+        "failed to delete orphaned Cloudinary binary",
+      );
     }
   }
   return true;

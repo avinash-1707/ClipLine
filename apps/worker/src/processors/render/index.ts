@@ -1,10 +1,12 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { renderJobSchema, type RenderResult } from "@clipline/jobs";
-import { timelineSchema } from "@clipline/timeline";
+import { renderJobSchema, type RenderJob, type RenderResult } from "@clipline/jobs";
+import { timelineSchema, type Timeline } from "@clipline/timeline";
 import type { Job } from "bullmq";
 import { uploadFile } from "../../lib/cloudinary";
+import { jobLog, jobLogStore } from "../../lib/log-context";
+import { logger } from "../../lib/logger";
 import { renderTimeline } from "./remotion";
 
 /**
@@ -13,11 +15,39 @@ import { renderTimeline } from "./remotion";
  * BullMQ. Progress streams through job.updateProgress -> QueueEvents.
  */
 export async function processRenderJob(job: Job): Promise<RenderResult> {
-  const payload = renderJobSchema.parse(job.data);
-  const timeline = timelineSchema.parse(payload.timeline);
+  // A malformed payload would otherwise throw a raw multi-line ZodError that
+  // BullMQ persists as failedReason and shows verbatim in the export dialog.
+  let payload: RenderJob;
+  let timeline: Timeline;
+  try {
+    payload = renderJobSchema.parse(job.data);
+    timeline = timelineSchema.parse(payload.timeline);
+  } catch {
+    throw new Error("render input was invalid — the saved timeline could not be read");
+  }
+
+  const log = logger.child({
+    jobId: job.id,
+    renderJobId: payload.renderJobId,
+    projectId: payload.projectId,
+    step: "render",
+  });
+  return jobLogStore.run(log, () =>
+    runRender(job, payload.renderJobId, timeline, payload.assetUrls),
+  );
+}
+
+async function runRender(
+  job: Job,
+  renderJobId: string,
+  timeline: Timeline,
+  assetUrls: Record<string, string>,
+): Promise<RenderResult> {
+  const started = performance.now();
+  jobLog().info({ status: "active" }, "render started");
 
   const scratch = await mkdtemp(
-    join(tmpdir(), `clipline-render-${payload.renderJobId}-`),
+    join(tmpdir(), `clipline-render-${renderJobId}-`),
   );
   try {
     const outputPath = join(scratch, "output.mp4");
@@ -25,7 +55,7 @@ export async function processRenderJob(job: Job): Promise<RenderResult> {
 
     await renderTimeline({
       timeline,
-      assetUrls: payload.assetUrls,
+      assetUrls,
       outputPath,
       onProgress: (progress) => {
         // QueueEvents traffic stays light: report whole-percent steps only
@@ -37,12 +67,17 @@ export async function processRenderJob(job: Job): Promise<RenderResult> {
       },
     });
 
+    jobLog().debug({ step: "upload" }, "uploading rendered output");
     const output = await uploadFile(outputPath, {
       folder: "renders",
       resourceType: "video",
       publicIdPrefix: "render",
     });
 
+    jobLog().info(
+      { status: "completed", durationMs: Math.round(performance.now() - started) },
+      "render completed",
+    );
     return { outputPublicId: output.publicId, outputUrl: output.url };
   } finally {
     await rm(scratch, { recursive: true, force: true });

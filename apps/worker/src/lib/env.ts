@@ -9,6 +9,12 @@ try {
 
 const envSchema = z.object({
   REDIS_URL: z.string().min(1).default("redis://localhost:6380"),
+  // Logging is read directly from process.env by @clipline/logger (kept
+  // dependency-free); declared here for discoverability and validation.
+  // LOG_LEVEL: error | warn | info | debug (default info).
+  LOG_LEVEL: z.enum(["error", "warn", "info", "debug"]).optional(),
+  // LOG_PRETTY=true enables human-readable colored output (dev); unset = JSON.
+  LOG_PRETTY: z.enum(["true", "false"]).optional(),
   // Required: every worker job reads from and writes to Cloudinary.
   CLOUDINARY_CLOUD_NAME: z.string().min(1),
   CLOUDINARY_API_KEY: z.string().min(1),

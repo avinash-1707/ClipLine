@@ -4,6 +4,7 @@ import { pipeline } from "node:stream/promises";
 import type { ReadableStream } from "node:stream/web";
 import { v2 as cloudinary } from "cloudinary";
 import { env } from "./env";
+import { jobLog } from "./log-context";
 
 cloudinary.config({
   cloud_name: env.CLOUDINARY_CLOUD_NAME,
@@ -29,6 +30,10 @@ export async function uploadFile(
       },
       (error, result) => {
         if (error || !result) {
+          jobLog().error(
+            { err: error, step: `upload:${options.folder}` },
+            "cloudinary upload failed",
+          );
           reject(
             new Error(
               `cloudinary upload failed (${options.folder}): ${error?.message ?? "no result returned"}`,
@@ -49,11 +54,13 @@ export async function downloadToFile(url: string, destPath: string) {
   try {
     response = await fetch(url);
   } catch (error) {
+    jobLog().error({ err: error, step: "download" }, "source download failed (network)");
     throw new Error(
       `source download failed — network error: ${(error as Error).message}`,
     );
   }
   if (!response.ok || !response.body) {
+    jobLog().error({ step: "download", httpStatus: response.status }, "source download failed");
     throw new Error(`source download failed (HTTP ${response.status})`);
   }
   // Stream to disk rather than buffering the whole file in memory — source
