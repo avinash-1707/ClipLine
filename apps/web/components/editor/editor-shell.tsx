@@ -115,6 +115,8 @@ export function EditorShell({ projectId }: { projectId: string }) {
           id: a.id,
           kind: a.kind,
           durationInFrames: a.durationInFrames!,
+          width: a.width ?? undefined,
+          height: a.height ?? undefined,
         })),
     );
   }, [assets.data, registerAssets]);

@@ -1,11 +1,18 @@
-import type { Transition, VideoClip, VideoTrack } from "@clipline/timeline";
+import {
+  OUTPUT_HEIGHT,
+  OUTPUT_WIDTH,
+  resolveVideoFraming,
+  type Transition,
+  type VideoClip,
+  type VideoTrack,
+} from "@clipline/timeline";
 import {
   AbsoluteFill,
   OffthreadVideo,
   Sequence,
   useCurrentFrame,
 } from "remotion";
-import { gradeFilter } from "./props";
+import { gradeFilter, type AssetDims } from "./props";
 
 const FPS = 30;
 
@@ -61,21 +68,46 @@ function VideoClipContent({
   clip,
   src,
   extraTailFrames,
+  dims,
 }: {
   clip: VideoClip;
   src: string;
   extraTailFrames: number;
+  dims: { width: number; height: number } | null;
 }) {
   const ownFrames = clipDuration(clip);
+  // Mirror the canvas preview exactly: the SAME resolveVideoFraming produces a
+  // draw rect in 1080x1920 space; positioning the element to that rect maps 1:1
+  // to the canvas drawImage(x,y,w,h) — a CSS transform would diverge on origin.
+  const rect = dims
+    ? resolveVideoFraming({
+        srcW: dims.width,
+        srcH: dims.height,
+        frameW: OUTPUT_WIDTH,
+        frameH: OUTPUT_HEIGHT,
+        framing: clip.framing,
+      })
+    : null;
   return (
-    <AbsoluteFill style={{ filter: gradeFilter(clip.colorGrade) }}>
+    <AbsoluteFill style={{ filter: gradeFilter(clip.colorGrade), overflow: "hidden" }}>
       <OffthreadVideo
         src={src}
         startFrom={clip.sourceInFrame}
         endAt={clip.sourceOutFrame + extraTailFrames}
         // the extended tail is visual only — mute it so audio doesn't double
         volume={(f) => (f >= ownFrames ? 0 : clip.gain)}
-        style={{ width: "100%", height: "100%", objectFit: "cover" }}
+        style={
+          rect
+            ? {
+                position: "absolute",
+                left: rect.x,
+                top: rect.y,
+                width: rect.w,
+                height: rect.h,
+                objectFit: "cover",
+              }
+            : { width: "100%", height: "100%", objectFit: "cover" }
+        }
       />
     </AbsoluteFill>
   );
@@ -90,9 +122,11 @@ function VideoClipContent({
 export function VideoTrackLayer({
   track,
   assetUrls,
+  assetDims,
 }: {
   track: VideoTrack;
   assetUrls: Record<string, string>;
+  assetDims: AssetDims;
 }) {
   return (
     <AbsoluteFill>
@@ -122,6 +156,7 @@ export function VideoTrackLayer({
             clip={clip}
             src={src}
             extraTailFrames={tailFrames}
+            dims={assetDims[clip.assetId] ?? null}
           />
         );
 

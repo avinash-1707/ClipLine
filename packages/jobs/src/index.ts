@@ -50,6 +50,18 @@ export const renderJobSchema = z.object({
   timeline: z.unknown(),
   /** assetId -> normalized Cloudinary URL for every asset the timeline uses. */
   assetUrls: z.record(z.string(), z.url()),
+  /** assetId -> source dimensions, for video clips. Used to compute the
+   * pan/zoom framing rect at render time (parity with the canvas preview).
+   * Defaults to empty so older queued payloads still parse. */
+  assetDims: z
+    .record(
+      z.string(),
+      z.object({
+        width: z.int().positive(),
+        height: z.int().positive(),
+      }),
+    )
+    .default({}),
 });
 
 export const renderResultSchema = z.object({

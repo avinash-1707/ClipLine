@@ -6,6 +6,7 @@ import type {
   audioTrackSchema,
   clipSchema,
   colorGradeSchema,
+  framingSchema,
   graphicClipSchema,
   graphicParamsSchema,
   graphicShapeSchema,
@@ -27,6 +28,7 @@ import type {
 } from "./schema";
 
 export type ColorGrade = z.infer<typeof colorGradeSchema>;
+export type Framing = z.infer<typeof framingSchema>;
 export type TransitionPreset = z.infer<typeof transitionPresetSchema>;
 export type TransitionDirection = z.infer<typeof transitionDirectionSchema>;
 export type Transition = z.infer<typeof transitionSchema>;

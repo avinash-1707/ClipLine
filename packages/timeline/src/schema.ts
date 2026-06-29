@@ -36,6 +36,24 @@ const normalizedPosition = z.object({
   y: z.number().min(0).max(1),
 });
 
+/** Framing zoom floor: cover-fit (video exactly fills the frame). */
+export const MIN_FRAMING_ZOOM = 1;
+/** Framing zoom ceiling: punch-in limit before normalized 1080p pixelates. */
+export const MAX_FRAMING_ZOOM = 3;
+
+/**
+ * Per-clip pan + zoom within the fixed output frame. `offsetX`/`offsetY` are in
+ * OUTPUT pixels (1080x1920 space); `zoom` multiplies the cover-fit scale, so 1
+ * is the floor (always fully covers the frame). Identity `{1,0,0}` reproduces
+ * the legacy cover-fit-centered behavior. Resolution-independent because both
+ * the canvas preview and the Remotion export work in 1080x1920 space.
+ */
+export const framingSchema = z.object({
+  zoom: z.number().min(MIN_FRAMING_ZOOM).max(MAX_FRAMING_ZOOM).default(1),
+  offsetX: z.number().finite().default(0),
+  offsetY: z.number().finite().default(0),
+});
+
 // ---------------------------------------------------------------------------
 // Color grading (per video clip)
 // ---------------------------------------------------------------------------
@@ -114,6 +132,8 @@ export const videoClipSchema = clipBase.extend({
     saturation: 0,
     lutAssetId: null,
   }),
+  /** Pan + zoom framing within the 1080x1920 frame. Identity = cover-centered. */
+  framing: framingSchema.default({ zoom: 1, offsetX: 0, offsetY: 0 }),
   /** Transition into the next adjacent clip on the same track, if any. */
   transitionToNext: transitionSchema.nullable().default(null),
 });

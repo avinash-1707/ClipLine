@@ -49,7 +49,13 @@ export function Timeline({ assets }: { assets: Asset[] }) {
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const target = e.target as HTMLElement;
-      if (target.closest("input, textarea, [contenteditable]")) return;
+      // the preview canvas owns arrow keys while focused (pan framing)
+      if (
+        target.closest(
+          "input, textarea, [contenteditable], [data-framing-canvas]",
+        )
+      )
+        return;
       const state = useTimelineStore.getState();
       switch (e.key) {
         case "s":

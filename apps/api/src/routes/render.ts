@@ -59,6 +59,7 @@ export const projectRenderRoutes = new Hono().post(
       ),
     ];
     const assetUrls: Record<string, string> = {};
+    const assetDims: Record<string, { width: number; height: number }> = {};
     for (const assetId of assetIds) {
       const asset = await getAsset(assetId);
       if (
@@ -70,6 +71,28 @@ export const projectRenderRoutes = new Hono().post(
         return fail(c, `asset ${assetId} is not ready to render`, 422);
       }
       assetUrls[assetId] = asset.normalizedUrl;
+      // video assets carry source dimensions; the worker needs them to apply
+      // each clip's pan/zoom framing identically to the preview.
+      if (asset.width && asset.height) {
+        assetDims[assetId] = { width: asset.width, height: asset.height };
+      }
+    }
+
+    // A clip the user reframed must have source dimensions, or the export would
+    // silently fall back to cover-fit and diverge from the preview. Fail loud.
+    for (const track of timeline.tracks) {
+      for (const clip of track.clips as Clip[]) {
+        if (clip.kind !== "video") continue;
+        const f = clip.framing;
+        const reframed = f.zoom !== 1 || f.offsetX !== 0 || f.offsetY !== 0;
+        if (reframed && !assetDims[clip.assetId]) {
+          return fail(
+            c,
+            "a reframed clip's source is missing dimensions — re-import it to export with framing",
+            422,
+          );
+        }
+      }
     }
 
     const job = await createRenderJob(projectId);
@@ -81,6 +104,7 @@ export const projectRenderRoutes = new Hono().post(
         projectId,
         timeline,
         assetUrls,
+        assetDims,
       });
     } catch (error) {
       await markRenderFailed(

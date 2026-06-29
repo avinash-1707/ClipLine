@@ -2,7 +2,9 @@ import {
   FPS,
   OUTPUT_HEIGHT,
   OUTPUT_WIDTH,
+  resolveVideoFraming,
   timelineDurationInFrames,
+  type Framing,
 } from "@clipline/timeline";
 import { useTimelineStore } from "@/store/timeline";
 import {
@@ -47,6 +49,12 @@ export class PreviewEngine {
   private unsubscribe: () => void;
   /** Resolved page font stack — canvas can't use next/font CSS variables. */
   private fontFamily = "sans-serif";
+  /**
+   * Live framing for the clip being dragged on the stage. Lets the interaction
+   * preview pan/zoom without committing to the store every pointer move (the
+   * store commit — one undo step — happens on pointer up). Cleared after.
+   */
+  private framingOverride: { clipId: string; framing: Framing } | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -69,6 +77,24 @@ export class PreviewEngine {
     this.fontFamily = getComputedStyle(document.body).fontFamily || "sans-serif";
     this.drawBlack();
     this.loop = this.loop.bind(this);
+  }
+
+  /**
+   * Set (or clear) the transient framing for a clip during a stage drag. While
+   * set, drawVideoLayer uses it instead of the clip's stored framing. Redraws
+   * immediately when paused so the pan/zoom tracks the pointer.
+   */
+  setFramingOverride(clipId: string, framing: Framing | null) {
+    this.framingOverride = framing ? { clipId, framing } : null;
+    if (!useTimelineStore.getState().isPlaying) this.drawCurrent();
+  }
+
+  /** Intrinsic source size of a pooled video, or null if not ready yet. */
+  getSourceSize(assetId: string): { w: number; h: number } | null {
+    const media = this.pool.get(assetId);
+    const v = media?.element as HTMLVideoElement | undefined;
+    if (!v || !v.videoWidth || !v.videoHeight) return null;
+    return { w: v.videoWidth, h: v.videoHeight };
   }
 
   /** Register a ready asset's media URL. Safe to call repeatedly. */
@@ -402,14 +428,25 @@ export class PreviewEngine {
     const { ctx } = this;
     const cw = this.canvas.width;
     const ch = this.canvas.height;
-    const scale = Math.max(cw / video.videoWidth, ch / video.videoHeight);
-    const dw = video.videoWidth * scale;
-    const dh = video.videoHeight * scale;
+    // framing comes from the shared resolver (same one Remotion uses → parity);
+    // a live drag override wins over the clip's stored framing.
+    const framing =
+      this.framingOverride && this.framingOverride.clipId === layer.clip.id
+        ? this.framingOverride.framing
+        : layer.clip.framing;
+    const rect = resolveVideoFraming({
+      srcW: video.videoWidth,
+      srcH: video.videoHeight,
+      frameW: cw,
+      frameH: ch,
+      framing,
+    });
 
     ctx.save();
     ctx.globalAlpha = alpha;
     ctx.filter = gradeToFilter(layer.clip);
-    ctx.drawImage(video, (cw - dw) / 2 + dx, (ch - dh) / 2 + dy, dw, dh);
+    // dx/dy is the transition slide — applied on top of the framing rect.
+    ctx.drawImage(video, rect.x + dx, rect.y + dy, rect.w, rect.h);
     ctx.restore();
   }
 

@@ -1,7 +1,13 @@
 "use client";
 
 import {
+  clampFraming,
   FPS,
+  MAX_FRAMING_ZOOM,
+  MIN_FRAMING_ZOOM,
+  OUTPUT_HEIGHT,
+  OUTPUT_WIDTH,
+  type Framing,
   type GraphicClip,
   type TextAnimation,
   type TextClip,
@@ -9,6 +15,7 @@ import {
   type VideoClip,
 } from "@clipline/timeline";
 import { SlidersHorizontal } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -170,8 +177,72 @@ function VideoInspector({ clip }: { clip: VideoClip }) {
       },
     });
 
+  const framing = clip.framing;
+  const dims = useTimelineStore((s) => s.assetsById[clip.assetId]);
+  // Clamp through the shared resolver so the stored value matches what the
+  // renderer draws (no out-of-range offsets, no thumb/render mismatch). Falls
+  // back to the raw patch when source dimensions aren't known yet.
+  const patchFraming = (patch: Partial<VideoClip["framing"]>) => {
+    const next: Framing = { ...framing, ...patch };
+    if (dims?.width && dims?.height) {
+      const c = clampFraming({
+        srcW: dims.width,
+        srcH: dims.height,
+        frameW: OUTPUT_WIDTH,
+        frameH: OUTPUT_HEIGHT,
+        framing: next,
+      });
+      update(clip.id, { framing: { zoom: next.zoom, ...c } });
+    } else {
+      update(clip.id, { framing: next });
+    }
+  };
+  const isFramed =
+    framing.zoom !== 1 || framing.offsetX !== 0 || framing.offsetY !== 0;
+
   return (
     <>
+      <Section title="Framing">
+        <SliderRow
+          label="Zoom"
+          value={framing.zoom}
+          min={MIN_FRAMING_ZOOM}
+          max={MAX_FRAMING_ZOOM}
+          step={0.01}
+          display={`${Math.round(framing.zoom * 100)}%`}
+          onChange={(v) => patchFraming({ zoom: v })}
+        />
+        <SliderRow
+          label="Pan X"
+          value={framing.offsetX}
+          min={-OUTPUT_WIDTH}
+          max={OUTPUT_WIDTH}
+          step={1}
+          display={`${Math.round(framing.offsetX)}px`}
+          onChange={(v) => patchFraming({ offsetX: v })}
+        />
+        <SliderRow
+          label="Pan Y"
+          value={framing.offsetY}
+          min={-OUTPUT_HEIGHT}
+          max={OUTPUT_HEIGHT}
+          step={1}
+          display={`${Math.round(framing.offsetY)}px`}
+          onChange={(v) => patchFraming({ offsetY: v })}
+        />
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full"
+          disabled={!isFramed}
+          onClick={() =>
+            update(clip.id, { framing: { zoom: 1, offsetX: 0, offsetY: 0 } })
+          }
+        >
+          Reset framing
+        </Button>
+      </Section>
+
       <Section title="Audio">
         <SliderRow
           label="Gain"

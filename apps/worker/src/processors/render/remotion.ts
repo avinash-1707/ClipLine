@@ -47,6 +47,8 @@ function getBundle(): Promise<string> {
 export interface RenderInput {
   timeline: Timeline;
   assetUrls: Record<string, string>;
+  /** Source dimensions per assetId — drives each clip's pan/zoom framing. */
+  assetDims: Record<string, { width: number; height: number }>;
   outputPath: string;
   onProgress?: (progress: number) => void;
 }
@@ -55,11 +57,12 @@ export interface RenderInput {
 export async function renderTimeline({
   timeline,
   assetUrls,
+  assetDims,
   outputPath,
   onProgress,
 }: RenderInput): Promise<void> {
   const serveUrl = await getBundle();
-  const inputProps = { timeline, assetUrls };
+  const inputProps = { timeline, assetUrls, assetDims };
 
   const composition = await selectComposition({
     serveUrl,

@@ -7,13 +7,16 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "tsx src/framing.test.ts"
   },
   "dependencies": {
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@clipline/config": "workspace:*",
+    "@types/node": "^25.9.1",
+    "tsx": "^4.22.4",
     "typescript": "^6.0.3"
   }
 }

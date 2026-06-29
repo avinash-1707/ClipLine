@@ -17,6 +17,7 @@ const FALLBACK: TimelineVideoProps = {
     tracks: [],
   },
   assetUrls: {},
+  assetDims: {},
 };
 
 export function RemotionRoot() {

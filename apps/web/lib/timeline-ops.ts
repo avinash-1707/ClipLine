@@ -21,6 +21,9 @@ export interface AssetMeta {
   id: string;
   kind: "video" | "audio";
   durationInFrames: number;
+  /** Source pixel dimensions (video only); used to clamp pan/zoom framing. */
+  width?: number;
+  height?: number;
 }
 
 function sortClips<T extends Clip>(clips: T[]): T[] {
@@ -101,6 +104,7 @@ export function addClipFromAsset(
             saturation: 0,
             lutAssetId: null,
           },
+          framing: { zoom: 1, offsetX: 0, offsetY: 0 },
           transitionToNext: null,
         }
       : { ...base, kind: "audio" };

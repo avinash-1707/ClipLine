@@ -33,7 +33,13 @@ export async function processRenderJob(job: Job): Promise<RenderResult> {
     step: "render",
   });
   return jobLogStore.run(log, () =>
-    runRender(job, payload.renderJobId, timeline, payload.assetUrls),
+    runRender(
+      job,
+      payload.renderJobId,
+      timeline,
+      payload.assetUrls,
+      payload.assetDims,
+    ),
   );
 }
 
@@ -42,6 +48,7 @@ async function runRender(
   renderJobId: string,
   timeline: Timeline,
   assetUrls: Record<string, string>,
+  assetDims: Record<string, { width: number; height: number }>,
 ): Promise<RenderResult> {
   const started = performance.now();
   jobLog().info({ status: "active" }, "render started");
@@ -56,6 +63,7 @@ async function runRender(
     await renderTimeline({
       timeline,
       assetUrls,
+      assetDims,
       outputPath,
       onProgress: (progress) => {
         // QueueEvents traffic stays light: report whole-percent steps only

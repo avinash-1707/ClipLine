@@ -16,7 +16,11 @@ import { VideoTrackLayer } from "./video-track";
  * first video track is topmost, audio clips mix additively, text renders
  * above everything.
  */
-export function TimelineVideo({ timeline, assetUrls }: TimelineVideoProps) {
+export function TimelineVideo({
+  timeline,
+  assetUrls,
+  assetDims = {},
+}: TimelineVideoProps) {
   const videoTracks = timeline.tracks.filter(
     (t): t is VideoTrack => t.kind === "video",
   );
@@ -34,7 +38,12 @@ export function TimelineVideo({ timeline, assetUrls }: TimelineVideoProps) {
     <AbsoluteFill style={{ backgroundColor: "#000" }}>
       {/* bottom-up: last video track in the array renders first (lowest) */}
       {[...videoTracks].reverse().map((track) => (
-        <VideoTrackLayer key={track.id} track={track} assetUrls={assetUrls} />
+        <VideoTrackLayer
+          key={track.id}
+          track={track}
+          assetUrls={assetUrls}
+          assetDims={assetDims}
+        />
       ))}
 
       {audioTracks.map((track) =>
