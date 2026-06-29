@@ -24,3 +24,6 @@ media/
 *.log
 .DS_Store
 *.tsbuildinfo
+
+# local agent config
+.claude/
