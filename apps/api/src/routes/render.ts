@@ -2,7 +2,9 @@ import {
   MAX_DURATION_IN_FRAMES,
   timelineDurationInFrames,
   timelineSchema,
+  type AudioClip,
   type Clip,
+  type VideoClip,
 } from "@clipline/timeline";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
@@ -49,13 +51,18 @@ export const projectRenderRoutes = new Hono().post(
       return fail(c, "timeline exceeds the maximum duration", 422);
     }
 
-    // every media clip must reference a ready asset with normalized media
+    // every media clip must reference a ready asset with normalized media.
+    // Only video/audio clips carry an assetId — text, graphic, and caption
+    // clips must NOT slip through here (they would resolve getAsset(undefined)).
     const assetIds = [
       ...new Set(
         timeline.tracks
           .flatMap((t) => t.clips as Clip[])
-          .filter((c2) => c2.kind !== "text")
-          .map((c2) => (c2 as { assetId: string }).assetId),
+          .filter(
+            (c2): c2 is VideoClip | AudioClip =>
+              c2.kind === "video" || c2.kind === "audio",
+          )
+          .map((c2) => c2.assetId),
       ),
     ];
     const assetUrls: Record<string, string> = {};

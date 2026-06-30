@@ -83,8 +83,11 @@ export const projectTranscribeRoutes = new Hono().post(
     ) {
       return fail(c, "the voiceover is still processing", 422);
     }
-    if (asset.durationInFrames && asset.durationInFrames > MAX_DURATION_IN_FRAMES) {
-      return fail(c, "the voiceover exceeds the maximum duration", 422);
+    // A ready asset should always carry a duration; reject when it's missing
+    // (an un-probed asset would otherwise bypass the cap and hand the worker an
+    // unbounded file to read into memory) or over the limit.
+    if (!asset.durationInFrames || asset.durationInFrames > MAX_DURATION_IN_FRAMES) {
+      return fail(c, "the voiceover is too long or still processing", 422);
     }
 
     const job = await createTranscribeJob(projectId, audioAssetId);

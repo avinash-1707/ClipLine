@@ -155,7 +155,9 @@ export function ClipBlock({
           ? clip.text
           : clip.kind === "graphic"
             ? clip.graphic.preset
-            : (asset?.originalFilename ?? clip.kind)}
+            : clip.kind === "caption"
+              ? clip.words.map((w) => w.text).join(" ")
+              : (asset?.originalFilename ?? clip.kind)}
       </span>
 
       {/* trim handles */}

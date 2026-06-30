@@ -612,11 +612,15 @@ export function groupWordsIntoCaptions(
   const idFor = input.idFor ?? (() => crypto.randomUUID());
   const fps = input.fps;
 
+  // Defensive sort: the gapless/no-overlap invariants assume time-ordered
+  // words. Deepgram returns them sorted, but the contract doesn't require it.
+  const sortedWords = [...input.words].sort((a, b) => a.startSec - b.startSec);
+
   // 1. Partition words into lines.
   const lines: SttWord[][] = [];
   let current: SttWord[] = [];
-  for (let i = 0; i < input.words.length; i++) {
-    const w = input.words[i]!;
+  for (let i = 0; i < sortedWords.length; i++) {
+    const w = sortedWords[i]!;
     if (current.length > 0) {
       const prev = current[current.length - 1]!;
       const gap = w.startSec - prev.endSec;
@@ -642,32 +646,40 @@ export function groupWordsIntoCaptions(
       li + 1 < lines.length
         ? Math.round(lines[li + 1]![0]!.startSec * fps)
         : Infinity;
+    // Frames this clip may occupy before the next line's clip starts. A word
+    // whose spoken end runs past the next line (overlapping/long speech) must
+    // be capped here, or the clip would overlap the next and the timeline
+    // schema would reject the whole document. Infinity for the last line.
+    const cap = nextLineStartAbs - clipStartAbs;
+    const hasCap = Number.isFinite(cap) && cap >= 1;
 
     const words: CaptionWord[] = [];
     let prevEnd = 0;
     for (let wi = 0; wi < line.length; wi++) {
       const w = line[wi]!;
-      const startFrame = Math.max(
+      let startFrame = Math.max(
         prevEnd,
         Math.round(w.startSec * fps) - clipStartAbs,
       );
+      // keep at least one frame for this word before the next clip starts
+      if (hasCap) startFrame = Math.min(startFrame, cap - 1);
       // Active until the next word starts; the last word until its own end.
       const rawEnd =
         wi + 1 < line.length
           ? Math.round(line[wi + 1]!.startSec * fps) - clipStartAbs
           : Math.round(w.endSec * fps) - clipStartAbs;
-      const endFrame = Math.max(startFrame + 1, rawEnd);
+      let endFrame = Math.max(startFrame + 1, rawEnd);
+      if (hasCap) endFrame = Math.min(endFrame, cap);
       words.push({ text: w.text, startFrame, endFrame });
       prevEnd = endFrame;
     }
 
-    // Clip lasts to its last word's end + tail pad, clamped off the next line.
+    // Clip lasts to its last word's end + tail pad, never past the next line.
     const lastEnd = words[words.length - 1]!.endFrame;
-    const maxDuration = nextLineStartAbs - clipStartAbs;
-    const durationInFrames = Math.max(
-      lastEnd,
-      Math.min(lastEnd + tailPad, Number.isFinite(maxDuration) ? maxDuration : lastEnd + tailPad),
-    );
+    const padded = lastEnd + tailPad;
+    const durationInFrames = hasCap
+      ? Math.max(1, Math.min(padded, cap))
+      : Math.max(1, padded);
 
     clips.push({
       id: idFor(li),
@@ -702,12 +714,18 @@ export function editCaptionWords(
   if (tokens.length === words.length) {
     return words.map((w, i) => ({ ...w, text: tokens[i]! }));
   }
+  // Count changed: redistribute the span evenly. Carry prevEnd so the partition
+  // stays gapless AND every word keeps >= 1 frame even when the span is shorter
+  // than the token count (where an independent floor would overlap neighbours).
   const start0 = words[0]!.startFrame;
   const span = Math.max(1, words[words.length - 1]!.endFrame - start0);
+  let prevEnd = start0;
   return tokens.map((t, i) => {
-    const s = start0 + Math.round((span * i) / tokens.length);
-    const e = start0 + Math.round((span * (i + 1)) / tokens.length);
-    return { text: t, startFrame: s, endFrame: Math.max(s + 1, e) };
+    const startFrame = prevEnd;
+    const target = start0 + Math.round((span * (i + 1)) / tokens.length);
+    const endFrame = Math.max(startFrame + 1, target);
+    prevEnd = endFrame;
+    return { text: t, startFrame, endFrame };
   });
 }
 

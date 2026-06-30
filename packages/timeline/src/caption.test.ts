@@ -5,6 +5,7 @@ import {
   captionClipSchema,
   captionPopScale,
   captionTrackSchema,
+  captionWordSchema,
   clipDurationInFrames,
   clipSchema,
   editCaptionWords,
@@ -259,6 +260,69 @@ test("editCaptionWords redistributes gaplessly when the count changes", () => {
 
 test("editCaptionWords keeps existing words on empty input", () => {
   assert.equal(editCaptionWords(sampleWords, "   "), sampleWords);
+});
+
+test("editCaptionWords stays gapless + valid when the span is shorter than the token count", () => {
+  // span 2 frames, 5 tokens: an independent floor would overlap; sequential must not
+  const edited = editCaptionWords(
+    [{ text: "hi", startFrame: 0, endFrame: 2 }],
+    "a b c d e",
+  );
+  assert.equal(edited.length, 5);
+  for (let i = 1; i < edited.length; i++) {
+    assert.equal(edited[i]!.startFrame, edited[i - 1]!.endFrame, "gapless");
+  }
+  for (const w of edited) assert.ok(w.endFrame > w.startFrame);
+});
+
+// --- grouping regression: overlap / ordering / single word -----------------
+
+test("groupWordsIntoCaptions never overlaps when a word runs past the line break", () => {
+  // word "b" is spoken until 2.0s but the next line ("c") starts at 1.0s; the
+  // clip must be capped so clip0 does not overlap clip1 (schema would reject).
+  const clips = group(
+    words(["a", 0, 0.5], ["b", 0.5, 2.0], ["c", 1.0, 1.5]),
+    { maxWordsPerLine: 2 },
+  );
+  captionTrackSchema.parse({ id: uid(), name: "CAP", kind: "caption", clips });
+  for (let i = 1; i < clips.length; i++) {
+    const prevEnd = clips[i - 1]!.startFrame + clips[i - 1]!.durationInFrames;
+    assert.ok(prevEnd <= clips[i]!.startFrame, `clip ${i - 1} must not overlap clip ${i}`);
+  }
+});
+
+test("groupWordsIntoCaptions sorts unsorted input defensively", () => {
+  const clips = group(words(["b", 0.5, 1.0], ["a", 0.0, 0.5]), {
+    maxWordsPerLine: 2,
+  });
+  assert.equal(clips[0]!.words[0]!.text, "a", "earliest word comes first");
+});
+
+test("groupWordsIntoCaptions handles a single-word transcript", () => {
+  const clips = group(words(["subscribe", 0, 0.5]));
+  assert.equal(clips.length, 1);
+  assert.equal(clips[0]!.words.length, 1);
+  assert.equal(resolveCaptionFrame(clips[0]!, 0).activeIndex, 0);
+  captionTrackSchema.parse({ id: uid(), name: "CAP", kind: "caption", clips });
+});
+
+test("resolveCaptionLineLayout handles a single word and an empty line", () => {
+  const single = resolveCaptionLineLayout({ wordWidths: [100], spaceWidth: 20 });
+  assert.equal(single.words[0]!.centerX, 50);
+  assert.equal(single.totalWidth, 100, "no trailing space after a single word");
+  const empty = resolveCaptionLineLayout({ wordWidths: [], spaceWidth: 20 });
+  assert.deepEqual(empty.words, []);
+  assert.equal(empty.totalWidth, 0);
+});
+
+test("captionPopScale peaks at exactly activeScale + overshoot", () => {
+  assert.ok(Math.abs(captionPopScale(3, 1.14) - 1.18) < 1e-9);
+});
+
+test("captionWordSchema rejects a zero-length word", () => {
+  assert.throws(() =>
+    captionWordSchema.parse({ text: "x", startFrame: 5, endFrame: 5 }),
+  );
 });
 
 console.log(`\n${passed} caption tests passed`);

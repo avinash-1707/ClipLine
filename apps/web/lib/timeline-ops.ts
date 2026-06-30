@@ -272,6 +272,41 @@ export function splitClip(
       durationInFrames: clip.durationInFrames - offset,
       graphic,
     };
+  } else if (clip.kind === "caption") {
+    // partition the words at the cut, rebasing the right half to its new start;
+    // each half keeps at least one word (the schema requires >= 1)
+    const leftWords = clip.words
+      .filter((w) => w.startFrame < offset)
+      .map((w) => ({ ...w, endFrame: Math.min(w.endFrame, offset) }));
+    const rightWords = clip.words
+      .filter((w) => w.endFrame > offset)
+      .map((w) => ({
+        ...w,
+        startFrame: Math.max(0, w.startFrame - offset),
+        endFrame: w.endFrame - offset,
+      }));
+    left = {
+      ...clip,
+      durationInFrames: offset,
+      words: leftWords.length
+        ? leftWords
+        : [{ ...clip.words[0]!, startFrame: 0, endFrame: offset }],
+    };
+    right = {
+      ...clip,
+      id: crypto.randomUUID(),
+      startFrame: atFrame,
+      durationInFrames: clip.durationInFrames - offset,
+      words: rightWords.length
+        ? rightWords
+        : [
+            {
+              ...clip.words[clip.words.length - 1]!,
+              startFrame: 0,
+              endFrame: clip.durationInFrames - offset,
+            },
+          ],
+    };
   } else {
     const media = clip as VideoClip | AudioClip;
     left = {

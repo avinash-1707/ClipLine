@@ -350,13 +350,18 @@ export const graphicClipSchema = clipBase.extend({
 // ---------------------------------------------------------------------------
 
 /** One spoken word, timed relative to its caption clip's startFrame. */
-export const captionWordSchema = z.object({
-  text: z.string().min(1),
-  /** First clip-local frame this word is active (inclusive). */
-  startFrame: frame,
-  /** Frame the word stops being active (exclusive). Always > startFrame. */
-  endFrame: frameCount,
-});
+export const captionWordSchema = z
+  .object({
+    text: z.string().min(1),
+    /** First clip-local frame this word is active (inclusive). */
+    startFrame: frame,
+    /** Frame the word stops being active (exclusive). Always > startFrame. */
+    endFrame: frameCount,
+  })
+  .refine((w) => w.endFrame > w.startFrame, {
+    message: "endFrame must be greater than startFrame",
+    path: ["endFrame"],
+  });
 
 /** Upper bound on words in a single caption clip (one displayed phrase). */
 export const MAX_WORDS_PER_CAPTION = 12;

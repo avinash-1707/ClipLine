@@ -1,10 +1,12 @@
 import type { TranscribeWord } from "@clipline/jobs";
 import { and, desc, eq, notInArray } from "drizzle-orm";
 import { db } from "../db/client";
-import { transcribeJobs } from "../db/schema";
+import { transcribeJobs, transcribeJobStatus } from "../db/schema";
 
 /** The non-terminal phases reported while a transcribe job runs. */
 export type TranscribePhase = "downloading" | "transcribing";
+
+type TranscribeJobStatus = (typeof transcribeJobStatus.enumValues)[number];
 
 export async function createTranscribeJob(
   projectId: string,
@@ -34,15 +36,21 @@ export async function listTranscribeJobs(projectId: string) {
 }
 
 export async function markTranscribePhase(id: string, phase: TranscribePhase) {
-  // Never resurrect a finished job: a late phase event must not overwrite a
-  // completed/failed terminal state (handlers can land out of order).
+  // Phases only advance. The `active` handler (downloading) and the worker's
+  // updateProgress (transcribing) fire on independent handlers, so a late
+  // "downloading" write must not clobber an already-set "transcribing", and
+  // neither may resurrect a completed/failed terminal state.
+  const cannotOverwrite: TranscribeJobStatus[] =
+    phase === "downloading"
+      ? ["completed", "failed", "transcribing"]
+      : ["completed", "failed"];
   await db
     .update(transcribeJobs)
     .set({ status: phase })
     .where(
       and(
         eq(transcribeJobs.id, id),
-        notInArray(transcribeJobs.status, ["completed", "failed"]),
+        notInArray(transcribeJobs.status, cannotOverwrite),
       ),
     );
 }
