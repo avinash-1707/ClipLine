@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono, Instrument_Serif } from "next/font/google";
+import { Anton, Geist, Geist_Mono, Instrument_Serif } from "next/font/google";
 import { Providers } from "@/components/providers";
 import "./globals.css";
 
@@ -17,6 +17,17 @@ const instrumentSerif = Instrument_Serif({
   variable: "--font-serif-display",
   weight: "400",
   style: ["normal", "italic"],
+  subsets: ["latin"],
+});
+
+/**
+ * Anton — bundled for the caption canvas renderer. next/font injects the
+ * @font-face and exposes it as --font-anton so the preview engine can measure
+ * glyphs without waiting for a network font fetch.
+ */
+const anton = Anton({
+  variable: "--font-anton",
+  weight: "400",
   subsets: ["latin"],
 });
 
@@ -46,7 +57,7 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${geistSans.variable} ${geistMono.variable} ${instrumentSerif.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} ${instrumentSerif.variable} ${anton.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
         <Providers>{children}</Providers>

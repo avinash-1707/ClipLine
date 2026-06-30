@@ -340,11 +340,86 @@ export const graphicClipSchema = clipBase.extend({
   graphic: graphicParamsSchema,
 });
 
+// ---------------------------------------------------------------------------
+// Captions: auto-generated "viral" karaoke subtitles. A caption clip is one
+// displayed phrase line that owns its own per-word timing; the currently-spoken
+// word is highlighted + popped. Word frames are RELATIVE to the clip's
+// startFrame and form a gapless partition (each word stays active until the
+// next begins), so the canvas preview and the Remotion export select the
+// identical active word every frame (parity firewall; see resolveCaptionFrame).
+// ---------------------------------------------------------------------------
+
+/** One spoken word, timed relative to its caption clip's startFrame. */
+export const captionWordSchema = z
+  .object({
+    text: z.string().min(1),
+    /** First clip-local frame this word is active (inclusive). */
+    startFrame: frame,
+    /** Frame the word stops being active (exclusive). Always > startFrame. */
+    endFrame: frameCount,
+  })
+  .refine((w) => w.endFrame > w.startFrame, {
+    message: "endFrame must be greater than startFrame",
+    path: ["endFrame"],
+  });
+
+/** Upper bound on words in a single caption clip (one displayed phrase). */
+export const MAX_WORDS_PER_CAPTION = 12;
+
+/**
+ * The one opinionated "viral" caption style. A handful of knobs, not a full
+ * text editor — captions are generated, then lightly tweaked. The active-word
+ * pop scale and stroke are rendered identically by both renderers; the stroke
+ * is painted as a layered fill ring (see strokeRingOffsets), never a native
+ * canvas stroke or CSS text-stroke (those diverge across the two engines).
+ */
+export const captionStyleSchema = z.object({
+  /** Pixel size relative to the 1080x1920 stage. */
+  fontSize: z.int().min(8).max(400).default(88),
+  /** CSS font family; bundled + loaded in both preview and Remotion. */
+  fontFamily: z.string().min(1).default("Anton"),
+  /** Fill for inactive (not currently spoken) words. */
+  color: z.string().min(1).default("#FFFFFF"),
+  /** Fill for the active (currently spoken) word. */
+  activeColor: z.string().min(1).default("#F5C842"),
+  /** Per-glyph stroke color (layered-fill ring). */
+  strokeColor: z.string().min(1).default("#000000"),
+  /** Stroke ring radius in stage pixels; 0 disables the stroke. */
+  strokeWidth: z.number().min(0).max(64).default(8),
+  /** Scale the active word settles to (1 = no pop). */
+  activeScale: z.number().min(1).max(2).default(1.14),
+  /** Render every word uppercase. */
+  uppercase: z.boolean().default(true),
+});
+
+const CAPTION_STYLE_DEFAULT = {
+  fontSize: 88,
+  fontFamily: "Anton",
+  color: "#FFFFFF",
+  activeColor: "#F5C842",
+  strokeColor: "#000000",
+  strokeWidth: 8,
+  activeScale: 1.14,
+  uppercase: true,
+} as const;
+
+export const captionClipSchema = clipBase.extend({
+  kind: z.literal("caption"),
+  /** Words shown on this line, in reading order. */
+  words: z.array(captionWordSchema).min(1).max(MAX_WORDS_PER_CAPTION),
+  /** Clip lifetime: first word start to last word end plus a readability tail. */
+  durationInFrames: frameCount,
+  position: normalizedPosition.default({ x: 0.5, y: 0.78 }),
+  align: textAlignSchema.default("center"),
+  style: captionStyleSchema.default(CAPTION_STYLE_DEFAULT),
+});
+
 export const clipSchema = z.discriminatedUnion("kind", [
   videoClipSchema,
   audioClipSchema,
   textClipSchema,
   graphicClipSchema,
+  captionClipSchema,
 ]);
 
 // ---------------------------------------------------------------------------
@@ -357,7 +432,9 @@ export const clipSchema = z.discriminatedUnion("kind", [
  * text clips carry an explicit duration.
  */
 function clipDuration(clip: z.infer<typeof clipSchema>): number {
-  return clip.kind === "text" || clip.kind === "graphic"
+  return clip.kind === "text" ||
+    clip.kind === "graphic" ||
+    clip.kind === "caption"
     ? clip.durationInFrames
     : clip.sourceOutFrame - clip.sourceInFrame;
 }
@@ -371,6 +448,7 @@ function refineTrackClips(
     if (
       clip.kind !== "text" &&
       clip.kind !== "graphic" &&
+      clip.kind !== "caption" &&
       clip.sourceOutFrame <= clip.sourceInFrame
     ) {
       ctx.addIssue({
@@ -444,11 +522,20 @@ export const graphicTrackSchema = trackBase.extend({
   clips: z.array(graphicClipSchema).max(MAX_CLIPS_PER_TRACK).superRefine(refineTrackClips),
 });
 
+export const captionTrackSchema = trackBase.extend({
+  kind: z.literal("caption"),
+  clips: z
+    .array(captionClipSchema)
+    .max(MAX_CLIPS_PER_TRACK)
+    .superRefine(refineTrackClips),
+});
+
 export const trackSchema = z.discriminatedUnion("kind", [
   videoTrackSchema,
   audioTrackSchema,
   textTrackSchema,
   graphicTrackSchema,
+  captionTrackSchema,
 ]);
 
 // ---------------------------------------------------------------------------

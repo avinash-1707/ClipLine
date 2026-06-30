@@ -1,12 +1,20 @@
 import assert from "node:assert/strict";
 import {
+  FPS,
+  groupWordsIntoCaptions,
   textClipSchema,
+  timelineSchema,
   type Framing,
   type TextClip,
   type Timeline,
   type VideoClip,
 } from "@clipline/timeline";
-import { splitClip, updateClip } from "./timeline-ops";
+import {
+  addCaptionClips,
+  ensureCaptionTrack,
+  splitClip,
+  updateClip,
+} from "./timeline-ops";
 
 let passed = 0;
 function test(name: string, fn: () => void) {
@@ -122,6 +130,71 @@ test("updateClip patches the background box (independent toggles)", () => {
     false,
     "original box untouched",
   );
+});
+
+// --- caption ops ------------------------------------------------------------
+
+function emptyTimelineWithVideo(): Timeline {
+  return {
+    schemaVersion: 1,
+    fps: 30,
+    width: 1080,
+    height: 1920,
+    tracks: [{ id: crypto.randomUUID(), kind: "video", name: "V1", clips: [] }],
+  };
+}
+
+function sampleCaptions() {
+  let seq = 0;
+  return groupWordsIntoCaptions({
+    words: [
+      { text: "go", startSec: 0, endSec: 0.4 },
+      { text: "viral", startSec: 0.4, endSec: 0.9 },
+      { text: "now", startSec: 1.5, endSec: 2.0 },
+    ],
+    fps: FPS,
+    idFor: () => `00000000-0000-4000-8000-${(seq++).toString().padStart(12, "0")}`,
+  });
+}
+
+test("addCaptionClips creates a caption track and stays schema-valid", () => {
+  const timeline = emptyTimelineWithVideo();
+  const clips = sampleCaptions();
+  const next = addCaptionClips(timeline, clips);
+  const track = next.tracks.find((t) => t.kind === "caption");
+  assert.ok(track, "a caption track was created");
+  assert.equal(track!.clips.length, clips.length);
+  // the result must round-trip the canonical schema (no overlaps, valid words)
+  timelineSchema.parse(next);
+  assert.notEqual(next, timeline, "returns a new timeline");
+});
+
+test("addCaptionClips replaces existing captions instead of stacking", () => {
+  const timeline = emptyTimelineWithVideo();
+  const first = addCaptionClips(timeline, sampleCaptions());
+  const replacement = sampleCaptions();
+  const second = addCaptionClips(first, replacement);
+  const track = second.tracks.find((t) => t.kind === "caption")!;
+  assert.equal(track.clips.length, replacement.length, "old captions cleared");
+  assert.equal(
+    second.tracks.filter((t) => t.kind === "caption").length,
+    1,
+    "exactly one caption track",
+  );
+});
+
+test("addCaptionClips with no clips is a no-op (no speech detected)", () => {
+  const timeline = emptyTimelineWithVideo();
+  const next = addCaptionClips(timeline, []);
+  assert.equal(next, timeline, "timeline unchanged");
+  assert.equal(next.tracks.some((t) => t.kind === "caption"), false);
+});
+
+test("ensureCaptionTrack is idempotent", () => {
+  const once = ensureCaptionTrack(emptyTimelineWithVideo());
+  const twice = ensureCaptionTrack(once);
+  assert.equal(twice, once, "second call is a no-op");
+  assert.equal(once.tracks.filter((t) => t.kind === "caption").length, 1);
 });
 
 console.log(`\n${passed} timeline-ops tests passed`);

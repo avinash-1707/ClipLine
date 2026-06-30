@@ -2,6 +2,7 @@ import {
   clipEndFrame,
   FPS,
   type AudioClip,
+  type CaptionClip,
   type GraphicClip,
   type TextAnimation,
   type TextClip,
@@ -192,6 +193,29 @@ export function entranceState(
   }
 }
 
+export interface ActiveCaption {
+  clip: CaptionClip;
+  /** Frames since the clip began (drives which word is active). */
+  localFrame: number;
+}
+
+/** All caption clips covering the frame, top track first. */
+export function resolveCaptions(
+  timeline: Timeline,
+  frame: number,
+): ActiveCaption[] {
+  const active: ActiveCaption[] = [];
+  for (const track of timeline.tracks) {
+    if (track.kind !== "caption") continue;
+    for (const clip of track.clips) {
+      if (frame >= clip.startFrame && frame < clipEndFrame(clip)) {
+        active.push({ clip, localFrame: frame - clip.startFrame });
+      }
+    }
+  }
+  return active;
+}
+
 /** Every clip with audio covering the frame: video clips plus audio clips. */
 export function resolveAudio(
   timeline: Timeline,
@@ -199,7 +223,7 @@ export function resolveAudio(
 ): ActiveAudio[] {
   const active: ActiveAudio[] = [];
   for (const track of timeline.tracks) {
-    if (track.kind === "text" || track.kind === "graphic") continue;
+    if (track.kind === "text" || track.kind === "graphic" || track.kind === "caption") continue;
     for (const clip of track.clips) {
       if (frame >= clip.startFrame && frame < clipEndFrame(clip)) {
         active.push({ clip, sourceTimeSec: sourceTimeSec(clip, frame) });

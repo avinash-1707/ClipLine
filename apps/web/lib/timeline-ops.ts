@@ -4,6 +4,7 @@ import {
   graphicParamsSchema,
   MAX_DURATION_IN_FRAMES,
   type AudioClip,
+  type CaptionClip,
   type Clip,
   type Timeline,
   type Track,
@@ -271,6 +272,41 @@ export function splitClip(
       durationInFrames: clip.durationInFrames - offset,
       graphic,
     };
+  } else if (clip.kind === "caption") {
+    // partition the words at the cut, rebasing the right half to its new start;
+    // each half keeps at least one word (the schema requires >= 1)
+    const leftWords = clip.words
+      .filter((w) => w.startFrame < offset)
+      .map((w) => ({ ...w, endFrame: Math.min(w.endFrame, offset) }));
+    const rightWords = clip.words
+      .filter((w) => w.endFrame > offset)
+      .map((w) => ({
+        ...w,
+        startFrame: Math.max(0, w.startFrame - offset),
+        endFrame: w.endFrame - offset,
+      }));
+    left = {
+      ...clip,
+      durationInFrames: offset,
+      words: leftWords.length
+        ? leftWords
+        : [{ ...clip.words[0]!, startFrame: 0, endFrame: offset }],
+    };
+    right = {
+      ...clip,
+      id: crypto.randomUUID(),
+      startFrame: atFrame,
+      durationInFrames: clip.durationInFrames - offset,
+      words: rightWords.length
+        ? rightWords
+        : [
+            {
+              ...clip.words[clip.words.length - 1]!,
+              startFrame: 0,
+              endFrame: clip.durationInFrames - offset,
+            },
+          ],
+    };
   } else {
     const media = clip as VideoClip | AudioClip;
     left = {
@@ -421,6 +457,38 @@ export function ensureGraphicTrack(timeline: Timeline): Timeline {
     clips: [],
   });
   return { ...timeline, tracks };
+}
+
+/** Guarantee a caption track exists; captions sit on top of everything. */
+export function ensureCaptionTrack(timeline: Timeline): Timeline {
+  if (timeline.tracks.some((t) => t.kind === "caption")) return timeline;
+  return {
+    ...timeline,
+    tracks: [
+      { id: crypto.randomUUID(), kind: "caption", name: "CAP", clips: [] },
+      ...timeline.tracks,
+    ],
+  };
+}
+
+/**
+ * Replace the caption track's clips with a freshly generated set. Generating
+ * subtitles is destructive-by-design: re-running replaces the captions rather
+ * than stacking them (the PM's "regenerate" model). The clips already carry
+ * absolute startFrames and a non-overlapping order from groupWordsIntoCaptions.
+ * Returns the timeline unchanged when there are no clips (no speech detected).
+ */
+export function addCaptionClips(
+  timeline: Timeline,
+  clips: CaptionClip[],
+): Timeline {
+  if (clips.length === 0) return timeline;
+  const withTrack = ensureCaptionTrack(timeline);
+  const track = withTrack.tracks.find((t) => t.kind === "caption")!;
+  return mapTrack(withTrack, track.id, (t) => ({
+    ...t,
+    clips: sortClips(clips as Clip[]) as never,
+  }));
 }
 
 /**

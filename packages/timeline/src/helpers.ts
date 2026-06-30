@@ -1,12 +1,17 @@
 import {
   FPS,
+  MAX_CLIPS_PER_TRACK,
   MAX_FRAMING_ZOOM,
+  MAX_WORDS_PER_CAPTION,
   MIN_FRAMING_ZOOM,
   OUTPUT_HEIGHT,
   OUTPUT_WIDTH,
   TIMELINE_SCHEMA_VERSION,
 } from "./schema";
 import type {
+  CaptionClip,
+  CaptionStyle,
+  CaptionWord,
   Clip,
   Framing,
   TextAlign,
@@ -398,9 +403,337 @@ export function wordRevealAlpha(
   return clamp01(progress * wordCount - wordIndex);
 }
 
+// ---------------------------------------------------------------------------
+// Captions (auto karaoke subtitles) — the parity firewall for caption render.
+// All caption math lives here so the canvas preview (drawCaption) and the
+// Remotion export (CaptionLayer) run identical code: which word is active at a
+// frame, the per-word pop scale, the per-word horizontal placement within a
+// line, and the layered-fill stroke ring. Pure, no DOM. The per-word x-offsets
+// reuse the same measured-advance-width contract proved parity-safe for text
+// (ADR 0001): the consumer measures word + space advance widths and feeds them
+// in; this resolver never measures glyphs itself.
+// ---------------------------------------------------------------------------
+
+/** Active-word index + per-word pop scale at a clip-local frame. */
+export interface CaptionFrameState {
+  /** Index of the currently-spoken word, or -1 before first / after last. */
+  activeIndex: number;
+  /** Render scale per word (pop curve for the active word, 1 otherwise). */
+  scales: number[];
+  /** Whether each word is the active word. */
+  active: boolean[];
+}
+
+/** Frames the active-word pop onset runs before settling to activeScale. */
+export const CAPTION_POP_ONSET_FRAMES = 3;
+/** Frames the pop spends settling from its peak down to activeScale. */
+export const CAPTION_POP_SETTLE_FRAMES = 2;
+/** How far past activeScale the pop peaks before settling. */
+export const CAPTION_POP_OVERSHOOT = 0.04;
+
+/**
+ * Scale of the active word `framesSinceStart` frames after it became active:
+ * pops 1 -> peak over the onset, settles peak -> activeScale, then holds. Pure
+ * and shared so the canvas and Remotion pops are frame-identical. Callers that
+ * honor reduced-motion skip this and hold scale at 1.
+ */
+export function captionPopScale(
+  framesSinceStart: number,
+  activeScale: number,
+): number {
+  const peak = activeScale + CAPTION_POP_OVERSHOOT;
+  if (framesSinceStart <= 0) return 1;
+  if (framesSinceStart < CAPTION_POP_ONSET_FRAMES) {
+    const t = framesSinceStart / CAPTION_POP_ONSET_FRAMES;
+    return 1 + (peak - 1) * (1 - (1 - t) ** 3);
+  }
+  const settleEnd = CAPTION_POP_ONSET_FRAMES + CAPTION_POP_SETTLE_FRAMES;
+  if (framesSinceStart < settleEnd) {
+    const t = (framesSinceStart - CAPTION_POP_ONSET_FRAMES) /
+      CAPTION_POP_SETTLE_FRAMES;
+    return peak - (peak - activeScale) * t;
+  }
+  return activeScale;
+}
+
+/**
+ * Karaoke state at a clip-local frame: which word is active and the per-word
+ * pop scale. Word frames are a gapless partition (endFrame[i] === startFrame of
+ * the next active span), so at most one word is active per frame and the canvas
+ * preview and Remotion export select the identical word by construction.
+ */
+export function resolveCaptionFrame(
+  clip: CaptionClip,
+  localFrame: number,
+): CaptionFrameState {
+  const scales: number[] = [];
+  const active: boolean[] = [];
+  let activeIndex = -1;
+  for (let i = 0; i < clip.words.length; i++) {
+    const w = clip.words[i]!;
+    const isActive = localFrame >= w.startFrame && localFrame < w.endFrame;
+    if (isActive) activeIndex = i;
+    active.push(isActive);
+    scales.push(
+      isActive
+        ? captionPopScale(localFrame - w.startFrame, clip.style.activeScale)
+        : 1,
+    );
+  }
+  return { activeIndex, scales, active };
+}
+
+/** One word's horizontal placement within a caption line, in output px. */
+export interface CaptionWordLayout {
+  index: number;
+  /** Word center x, relative to the line's left edge. */
+  centerX: number;
+  /** Measured advance width of the word. */
+  width: number;
+}
+
+/**
+ * Per-word horizontal placement within ONE caption line from measured advance
+ * widths. The single place per-word x is computed: the canvas walks these
+ * centers and the Remotion inline flow reproduces them (same measured-advance
+ * contract as text). Words are separated by one `spaceWidth`. The active word's
+ * pop scales about its own `centerX`, so neighbors never reflow.
+ */
+export function resolveCaptionLineLayout(input: {
+  wordWidths: number[];
+  spaceWidth: number;
+}): { totalWidth: number; words: CaptionWordLayout[] } {
+  const { wordWidths, spaceWidth } = input;
+  const words: CaptionWordLayout[] = [];
+  let cursor = 0;
+  for (let i = 0; i < wordWidths.length; i++) {
+    const width = Math.max(0, wordWidths[i]!);
+    words.push({ index: i, centerX: cursor + width / 2, width });
+    cursor += width + (i < wordWidths.length - 1 ? spaceWidth : 0);
+  }
+  return { totalWidth: cursor, words };
+}
+
+/**
+ * Sample offsets (output px) for the layered-fill stroke ring. Both renderers
+ * draw a fill copy of the text at each offset BEFORE the top fill, producing a
+ * faux per-glyph stroke that is pixel-identical across canvas and Chromium CSS
+ * (it is just fills — the primitive ADR 0001 already proved parity-safe). A
+ * native canvas stroke or `-webkit-text-stroke` would diverge. Empty when the
+ * stroke is disabled.
+ */
+export function strokeRingOffsets(
+  strokeWidth: number,
+  samples = 12,
+): { dx: number; dy: number }[] {
+  if (!Number.isFinite(strokeWidth) || strokeWidth <= 0) return [];
+  const offsets: { dx: number; dy: number }[] = [];
+  for (let k = 0; k < samples; k++) {
+    const angle = (k / samples) * Math.PI * 2;
+    offsets.push({
+      dx: Math.cos(angle) * strokeWidth,
+      dy: Math.sin(angle) * strokeWidth,
+    });
+  }
+  return offsets;
+}
+
+/** Thrown when a transcript would produce more caption clips than the track cap. */
+export class CaptionLimitError extends Error {
+  constructor(public readonly count: number) {
+    super(
+      `transcript would produce ${count} caption clips, over the ${MAX_CLIPS_PER_TRACK} per-track limit`,
+    );
+    this.name = "CaptionLimitError";
+  }
+}
+
+/** A raw STT word with second-based timing (the worker's output shape). */
+export interface SttWord {
+  text: string;
+  startSec: number;
+  endSec: number;
+}
+
+export interface CaptionGroupingInput {
+  words: SttWord[];
+  /** Project fps (FPS); used to convert seconds -> frames. */
+  fps: number;
+  /** Max words shown on one line before breaking. Default 2. */
+  maxWordsPerLine?: number;
+  /** Break a line when the silent gap before a word exceeds this. Default 0.4s. */
+  pauseGapSec?: number;
+  /** Frames a caption lingers after its last word ends. Default 6. */
+  tailPadFrames?: number;
+  style?: Partial<CaptionStyle>;
+  position?: { x: number; y: number };
+  align?: TextAlign;
+  /** Id factory (kept injectable for deterministic tests). */
+  idFor?: (lineIndex: number) => string;
+}
+
+const CAPTION_DEFAULTS = {
+  maxWordsPerLine: 2,
+  pauseGapSec: 0.4,
+  tailPadFrames: 6,
+} as const;
+
+const CAPTION_STYLE_FALLBACK: CaptionStyle = {
+  fontSize: 88,
+  fontFamily: "Anton",
+  color: "#FFFFFF",
+  activeColor: "#F5C842",
+  strokeColor: "#000000",
+  strokeWidth: 8,
+  activeScale: 1.14,
+  uppercase: true,
+};
+
+/**
+ * Group STT words (seconds) into caption clips — one clip per displayed line.
+ * Breaks a line at `maxWordsPerLine` OR when the inter-word gap exceeds
+ * `pauseGapSec` (a natural phrase boundary). Converts seconds to frames with
+ * `Math.round` and derives each word's endFrame from the next word's start
+ * (gapless, no 1-frame flicker), clamping so words never collide and clips
+ * never overlap the next line. Throws CaptionLimitError past the track cap.
+ */
+export function groupWordsIntoCaptions(
+  input: CaptionGroupingInput,
+): CaptionClip[] {
+  const maxWords = Math.min(
+    MAX_WORDS_PER_CAPTION,
+    Math.max(1, input.maxWordsPerLine ?? CAPTION_DEFAULTS.maxWordsPerLine),
+  );
+  const pauseGap = input.pauseGapSec ?? CAPTION_DEFAULTS.pauseGapSec;
+  const tailPad = input.tailPadFrames ?? CAPTION_DEFAULTS.tailPadFrames;
+  const style: CaptionStyle = { ...CAPTION_STYLE_FALLBACK, ...input.style };
+  const position = input.position ?? { x: 0.5, y: 0.78 };
+  const align: TextAlign = input.align ?? "center";
+  const idFor = input.idFor ?? (() => crypto.randomUUID());
+  const fps = input.fps;
+
+  // Defensive sort: the gapless/no-overlap invariants assume time-ordered
+  // words. Deepgram returns them sorted, but the contract doesn't require it.
+  const sortedWords = [...input.words].sort((a, b) => a.startSec - b.startSec);
+
+  // 1. Partition words into lines.
+  const lines: SttWord[][] = [];
+  let current: SttWord[] = [];
+  for (let i = 0; i < sortedWords.length; i++) {
+    const w = sortedWords[i]!;
+    if (current.length > 0) {
+      const prev = current[current.length - 1]!;
+      const gap = w.startSec - prev.endSec;
+      if (current.length >= maxWords || gap > pauseGap) {
+        lines.push(current);
+        current = [];
+      }
+    }
+    current.push(w);
+  }
+  if (current.length > 0) lines.push(current);
+
+  if (lines.length > MAX_CLIPS_PER_TRACK) {
+    throw new CaptionLimitError(lines.length);
+  }
+
+  // 2. Build a caption clip per line, frame-quantized and gapless.
+  const clips: CaptionClip[] = [];
+  for (let li = 0; li < lines.length; li++) {
+    const line = lines[li]!;
+    const clipStartAbs = Math.round(line[0]!.startSec * fps);
+    const nextLineStartAbs =
+      li + 1 < lines.length
+        ? Math.round(lines[li + 1]![0]!.startSec * fps)
+        : Infinity;
+    // Frames this clip may occupy before the next line's clip starts. A word
+    // whose spoken end runs past the next line (overlapping/long speech) must
+    // be capped here, or the clip would overlap the next and the timeline
+    // schema would reject the whole document. Infinity for the last line.
+    const cap = nextLineStartAbs - clipStartAbs;
+    const hasCap = Number.isFinite(cap) && cap >= 1;
+
+    const words: CaptionWord[] = [];
+    let prevEnd = 0;
+    for (let wi = 0; wi < line.length; wi++) {
+      const w = line[wi]!;
+      let startFrame = Math.max(
+        prevEnd,
+        Math.round(w.startSec * fps) - clipStartAbs,
+      );
+      // keep at least one frame for this word before the next clip starts
+      if (hasCap) startFrame = Math.min(startFrame, cap - 1);
+      // Active until the next word starts; the last word until its own end.
+      const rawEnd =
+        wi + 1 < line.length
+          ? Math.round(line[wi + 1]!.startSec * fps) - clipStartAbs
+          : Math.round(w.endSec * fps) - clipStartAbs;
+      let endFrame = Math.max(startFrame + 1, rawEnd);
+      if (hasCap) endFrame = Math.min(endFrame, cap);
+      words.push({ text: w.text, startFrame, endFrame });
+      prevEnd = endFrame;
+    }
+
+    // Clip lasts to its last word's end + tail pad, never past the next line.
+    const lastEnd = words[words.length - 1]!.endFrame;
+    const padded = lastEnd + tailPad;
+    const durationInFrames = hasCap
+      ? Math.max(1, Math.min(padded, cap))
+      : Math.max(1, padded);
+
+    clips.push({
+      id: idFor(li),
+      kind: "caption",
+      startFrame: clipStartAbs,
+      words,
+      durationInFrames,
+      position,
+      align,
+      style,
+    });
+  }
+  return clips;
+}
+
+/**
+ * Apply edited caption text back onto the word array. Editing word text (fixing
+ * a misheard word) is in v1 scope; per-word re-timing is not. So when the word
+ * count is unchanged the original per-word timing is preserved exactly; when the
+ * user adds/removes words the clip's span is redistributed evenly and gaplessly.
+ * Empty input keeps the existing words (the schema requires at least one).
+ */
+export function editCaptionWords(
+  words: CaptionWord[],
+  text: string,
+): CaptionWord[] {
+  const tokens = text
+    .split(/\s+/)
+    .map((t) => t.trim())
+    .filter((t) => t.length > 0);
+  if (tokens.length === 0 || words.length === 0) return words;
+  if (tokens.length === words.length) {
+    return words.map((w, i) => ({ ...w, text: tokens[i]! }));
+  }
+  // Count changed: redistribute the span evenly. Carry prevEnd so the partition
+  // stays gapless AND every word keeps >= 1 frame even when the span is shorter
+  // than the token count (where an independent floor would overlap neighbours).
+  const start0 = words[0]!.startFrame;
+  const span = Math.max(1, words[words.length - 1]!.endFrame - start0);
+  let prevEnd = start0;
+  return tokens.map((t, i) => {
+    const startFrame = prevEnd;
+    const target = start0 + Math.round((span * (i + 1)) / tokens.length);
+    const endFrame = Math.max(startFrame + 1, target);
+    prevEnd = endFrame;
+    return { text: t, startFrame, endFrame };
+  });
+}
+
 /** Duration of a clip in frames, regardless of clip kind. */
 export function clipDurationInFrames(clip: Clip): number {
-  return clip.kind === "text" || clip.kind === "graphic"
+  return clip.kind === "text" ||
+    clip.kind === "graphic" ||
+    clip.kind === "caption"
     ? clip.durationInFrames
     : clip.sourceOutFrame - clip.sourceInFrame;
 }

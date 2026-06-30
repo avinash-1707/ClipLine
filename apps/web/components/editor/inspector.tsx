@@ -2,11 +2,13 @@
 
 import {
   clampFraming,
+  editCaptionWords,
   FPS,
   MAX_FRAMING_ZOOM,
   MIN_FRAMING_ZOOM,
   OUTPUT_HEIGHT,
   OUTPUT_WIDTH,
+  type CaptionClip,
   type Framing,
   type GraphicClip,
   type TextAnimation,
@@ -822,6 +824,114 @@ function TextInspector({ clip }: { clip: TextClip }) {
   );
 }
 
+function CaptionInspector({ clip }: { clip: CaptionClip }) {
+  const update = useTimelineStore((s) => s.updateClip);
+
+  // Derive the editable text from the word array (display only; timing
+  // is preserved when word count is unchanged — see editCaptionWords).
+  const wordsText = clip.words.map((w) => w.text).join(" ");
+
+  const durationSec = (clip.durationInFrames / FPS).toFixed(2);
+  const inFrame = clip.startFrame;
+  const outFrame = clip.startFrame + clip.durationInFrames;
+
+  return (
+    <>
+      {/* ── Words ─────────────────────────────────────────────────── */}
+      <Section title="Words">
+        <textarea
+          value={wordsText}
+          aria-label="Caption words"
+          rows={2}
+          onChange={(e) =>
+            update(clip.id, {
+              words: editCaptionWords(clip.words, e.target.value),
+            })
+          }
+          className="w-full resize-none rounded-md border border-input bg-transparent px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+        />
+      </Section>
+
+      {/* ── Style ─────────────────────────────────────────────────── */}
+      <Section title="Style">
+        <SliderRow
+          label="Size"
+          value={clip.style.fontSize}
+          min={48}
+          max={128}
+          step={2}
+          display={`${clip.style.fontSize}px`}
+          onChange={(v) =>
+            update(clip.id, { style: { ...clip.style, fontSize: v } })
+          }
+        />
+        <ColorRow
+          label="Fill"
+          value={clip.style.color}
+          onChange={(v) =>
+            update(clip.id, { style: { ...clip.style, color: v } })
+          }
+        />
+        <ColorRow
+          label="Active word"
+          value={clip.style.activeColor}
+          onChange={(v) =>
+            update(clip.id, { style: { ...clip.style, activeColor: v } })
+          }
+        />
+        <SliderRow
+          label="Stroke"
+          value={clip.style.strokeWidth}
+          min={0}
+          max={16}
+          step={0.5}
+          display={`${clip.style.strokeWidth}px`}
+          onChange={(v) =>
+            update(clip.id, { style: { ...clip.style, strokeWidth: v } })
+          }
+        />
+      </Section>
+
+      {/* ── Position ──────────────────────────────────────────────── */}
+      <Section title="Position">
+        <SliderRow
+          label="Y"
+          value={clip.position.y}
+          min={0}
+          max={1}
+          step={0.01}
+          onChange={(v) =>
+            update(clip.id, { position: { ...clip.position, y: v } })
+          }
+        />
+      </Section>
+
+      {/* ── Timing (read-only) ────────────────────────────────────── */}
+      <section className="space-y-2 border-b border-border px-4 py-4">
+        <h3 className="label-mono text-muted-foreground">Timing</h3>
+        <div className="flex items-baseline justify-between">
+          <span className="label-mono text-muted-foreground">In</span>
+          <span className="label-mono tabular-nums text-foreground/70">
+            {inFrame}f
+          </span>
+        </div>
+        <div className="flex items-baseline justify-between">
+          <span className="label-mono text-muted-foreground">Out</span>
+          <span className="label-mono tabular-nums text-foreground/70">
+            {outFrame}f
+          </span>
+        </div>
+        <div className="flex items-baseline justify-between">
+          <span className="label-mono text-muted-foreground">Duration</span>
+          <span className="label-mono tabular-nums text-foreground/70">
+            {durationSec}s
+          </span>
+        </div>
+      </section>
+    </>
+  );
+}
+
 const GRAPHIC_ANIMATIONS = ["none", "fade-in", "slide-up", "pop"] as const;
 
 function GraphicInspector({ clip }: { clip: GraphicClip }) {
@@ -1096,6 +1206,7 @@ export function Inspector() {
       {clip.kind === "video" && <VideoInspector clip={clip} />}
       {clip.kind === "text" && <TextInspector clip={clip} />}
       {clip.kind === "graphic" && <GraphicInspector clip={clip} />}
+      {clip.kind === "caption" && <CaptionInspector clip={clip} />}
       {clip.kind === "audio" && (
         <Section title="Audio">
           <SliderRow

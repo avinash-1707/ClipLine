@@ -5,6 +5,7 @@ import { z } from "zod";
 
 export const INGEST_QUEUE = "ingest";
 export const RENDER_QUEUE = "render";
+export const TRANSCRIBE_QUEUE = "transcribe";
 
 // ---------------------------------------------------------------------------
 // Ingest
@@ -71,3 +72,35 @@ export const renderResultSchema = z.object({
 
 export type RenderJob = z.infer<typeof renderJobSchema>;
 export type RenderResult = z.infer<typeof renderResultSchema>;
+
+// ---------------------------------------------------------------------------
+// Transcribe (speech-to-text for auto subtitles)
+// ---------------------------------------------------------------------------
+
+export const transcribeJobSchema = z.object({
+  transcribeJobId: z.uuid(),
+  projectId: z.uuid(),
+  /** The voiceover asset the API resolved (longest contiguous audio clip). */
+  audioAssetId: z.uuid(),
+  /** Normalized Cloudinary delivery URL of that asset. */
+  audioUrl: z.url(),
+  /** BCP-47-ish language hint for the STT engine. */
+  language: z.string().min(2).default("en"),
+});
+
+/** One transcribed word with SECOND-based timing. The worker stays unaware of
+ * fps; the web client converts seconds -> frames when authoring caption clips. */
+export const transcribeWordSchema = z.object({
+  text: z.string().min(1),
+  startSec: z.number().nonnegative(),
+  endSec: z.number().positive(),
+});
+
+export const transcribeResultSchema = z.object({
+  /** Empty when the audio has no detectable speech — a valid result, not a failure. */
+  words: z.array(transcribeWordSchema),
+});
+
+export type TranscribeJob = z.infer<typeof transcribeJobSchema>;
+export type TranscribeWord = z.infer<typeof transcribeWordSchema>;
+export type TranscribeResult = z.infer<typeof transcribeResultSchema>;

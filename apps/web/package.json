@@ -13,6 +13,7 @@
   "dependencies": {
     "@base-ui/react": "^1.5.0",
     "@clipline/timeline": "workspace:*",
+    "@remotion/google-fonts": "^4.0.484",
     "@tanstack/react-query": "^5.101.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

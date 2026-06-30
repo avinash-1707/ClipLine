@@ -1,15 +1,30 @@
 "use client";
 
 import { FPS, MAX_DURATION_IN_FRAMES } from "@clipline/timeline";
-import { Minus, Plus, Scissors, Shapes, Trash2, Type } from "lucide-react";
+import { Captions, Minus, Plus, Scissors, Shapes, Trash2, Type } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { SubtitlesDialog } from "@/components/editor/subtitles-dialog";
+import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import type { Asset } from "@/lib/api";
 import type { GraphicPreset } from "@/lib/timeline-ops";
+import { selectDuration, useTimelineStore } from "@/store/timeline";
+import { Playhead } from "./playhead";
+import { Ruler } from "./ruler";
+import { Timecode } from "./timecode";
+import { TrackRow } from "./track-row";
 
 const GRAPHIC_PRESETS: Array<{ preset: GraphicPreset; label: string }> = [
   { preset: "lower-third", label: "Lower third" },
@@ -18,16 +33,14 @@ const GRAPHIC_PRESETS: Array<{ preset: GraphicPreset; label: string }> = [
   { preset: "overlay", label: "Color overlay" },
   { preset: "shape", label: "Shape" },
 ];
-import { useEffect, useMemo } from "react";
-import { Button } from "@/components/ui/button";
-import type { Asset } from "@/lib/api";
-import { selectDuration, useTimelineStore } from "@/store/timeline";
-import { Playhead } from "./playhead";
-import { Ruler } from "./ruler";
-import { Timecode } from "./timecode";
-import { TrackRow } from "./track-row";
 
-export function Timeline({ assets }: { assets: Asset[] }) {
+export function Timeline({
+  assets,
+  projectId,
+}: {
+  assets: Asset[];
+  projectId: string;
+}) {
   const timeline = useTimelineStore((s) => s.timeline);
   const pxPerFrame = useTimelineStore((s) => s.pxPerFrame);
   const setZoom = useTimelineStore((s) => s.setZoom);
@@ -39,6 +52,17 @@ export function Timeline({ assets }: { assets: Asset[] }) {
   const addText = useTimelineStore((s) => s.addTextAtPlayhead);
   const addGraphic = useTimelineStore((s) => s.addGraphicAtPlayhead);
   const duration = useTimelineStore(selectDuration);
+
+  // Subtitles dialog state.
+  const [subtitlesOpen, setSubtitlesOpen] = useState(false);
+
+  // Enabled only when an audio clip exists on the timeline (voiceover to transcribe).
+  const hasAudio = useTimelineStore(
+    (s) =>
+      s.timeline?.tracks.some(
+        (t) => t.kind === "audio" && t.clips.length > 0,
+      ) ?? false,
+  );
 
   const assetsById = useMemo(
     () => new Map(assets.map((a) => [a.id, a])),
@@ -172,6 +196,38 @@ export function Timeline({ assets }: { assets: Asset[] }) {
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="Generate subtitles"
+                    disabled={!hasAudio}
+                    onClick={() => setSubtitlesOpen(true)}
+                    className={
+                      hasAudio
+                        ? "text-[var(--caption-accent)] hover:text-[var(--caption-accent)] hover:bg-[color-mix(in_oklch,var(--caption-accent)_8%,transparent)]"
+                        : ""
+                    }
+                  >
+                    <Captions className="size-3.5" />
+                  </Button>
+                }
+              />
+              <TooltipContent side="top">
+                Generate subtitles from voiceover — audio sent to Deepgram.
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+          {subtitlesOpen && (
+            <SubtitlesDialog
+              projectId={projectId}
+              open={subtitlesOpen}
+              onOpenChange={setSubtitlesOpen}
+            />
+          )}
         </div>
         <Timecode />
         <div className="flex items-center gap-1">

@@ -1,11 +1,13 @@
 import {
   MAX_DURATION_IN_FRAMES,
   timelineDurationInFrames,
+  type CaptionClip,
   type Clip,
   type Timeline,
 } from "@clipline/timeline";
 import { create } from "zustand";
 import {
+  addCaptionClips,
   addClipFromAsset,
   addGraphicClip,
   addTextClip,
@@ -53,6 +55,8 @@ interface TimelineStore {
   addTextAtPlayhead: () => boolean;
   /** Returns false when the graphic track has no room at the playhead. */
   addGraphicAtPlayhead: (preset: GraphicPreset) => boolean;
+  /** Replace the caption track with generated captions. False if none given. */
+  addCaptions: (clips: CaptionClip[]) => boolean;
 }
 
 function mutate(
@@ -133,7 +137,7 @@ export const useTimelineStore = create<TimelineStore>((set, get) => ({
         .flatMap((t) => t.clips as Clip[])
         .find((c) => c.id === clipId);
       const assetDuration =
-        clip && clip.kind !== "text" && clip.kind !== "graphic"
+        clip && clip.kind !== "text" && clip.kind !== "graphic" && clip.kind !== "caption"
           ? s.assetsById[clip.assetId]?.durationInFrames
           : undefined;
       return mutate(s, trimClip(s.timeline, clipId, edge, delta, assetDuration));
@@ -185,6 +189,16 @@ export const useTimelineStore = create<TimelineStore>((set, get) => ({
         ?.clips as Clip[] | undefined)?.some((p) => p.id === c.id),
     );
     set({ ...mutate(s, next), selectedClipId: added?.id ?? null });
+    return true;
+  },
+
+  addCaptions: (clips) => {
+    const s = get();
+    if (!s.timeline || clips.length === 0) return false;
+    const next = addCaptionClips(s.timeline, clips);
+    if (next === s.timeline) return false;
+    // select the first caption so the inspector opens on the new track
+    set({ ...mutate(s, next), selectedClipId: clips[0]!.id });
     return true;
   },
 }));
