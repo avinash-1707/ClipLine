@@ -99,13 +99,89 @@ export const textAnimationPresetSchema = z.enum([
   "slide-up",
   "pop",
   "typewriter",
+  // richer entrances (added 2026-06-30)
+  "blur-in",
+  "slide-in-right",
+  "scale-pop",
+  "word-reveal",
+]);
+
+/** Exit animation presets (text leaves the frame over the clip's tail). */
+export const textExitPresetSchema = z.enum([
+  "none",
+  "fade-out",
+  "slide-out-up",
+  "scale-out",
 ]);
 
 export const textAnimationSchema = z.object({
   preset: textAnimationPresetSchema.default("none"),
   /** Frames the entrance animation runs for (within the clip's duration). */
   durationInFrames: frameCount.default(15),
+  /** Exit animation played over the clip's final `exitDurationInFrames`. */
+  exit: textExitPresetSchema.default("none"),
+  /** Frames the exit animation runs for (within the clip's duration). */
+  exitDurationInFrames: frameCount.default(15),
 });
+
+// ---------------------------------------------------------------------------
+// Text styling: font style, alignment, and an optional background/border box.
+// Background fill and border are INDEPENDENT toggles that share one geometry
+// (the padded content rect); a border can stroke the rect with no fill, and
+// vice versa. Geometry is computed once by resolveTextLayout (helpers) so the
+// canvas preview and the Remotion export stay pixel-identical (ADR 0001).
+// ---------------------------------------------------------------------------
+
+export const fontStyleSchema = z.object({
+  bold: z.boolean().default(false),
+  italic: z.boolean().default(false),
+  underline: z.boolean().default(false),
+});
+
+export const textAlignSchema = z.enum(["left", "center", "right"]);
+
+/** Solid background fill behind the text box. */
+export const textBoxFillSchema = z.object({
+  enabled: z.boolean().default(false),
+  color: z.string().min(1).default("#000000"),
+  opacity: z.number().min(0).max(1).default(1),
+});
+
+/** Border stroked around the text box (drawn outside the padded rect). */
+export const textBoxBorderSchema = z.object({
+  enabled: z.boolean().default(false),
+  color: z.string().min(1).default("#FFFFFF"),
+  /** Stroke width in stage (1080x1920) pixels. */
+  width: z.number().min(0).max(64).default(4),
+});
+
+/** The text box: independent fill + border, sharing padding/corner geometry. */
+export const textBoxSchema = z.object({
+  bg: textBoxFillSchema.default({ enabled: false, color: "#000000", opacity: 1 }),
+  border: textBoxBorderSchema.default({
+    enabled: false,
+    color: "#FFFFFF",
+    width: 4,
+  }),
+  /** Uniform padding around the text content, in stage pixels. */
+  padding: z.number().min(0).max(256).default(24),
+  /** Corner radius of the box, in stage pixels. */
+  cornerRadius: z.number().min(0).max(256).default(0),
+});
+
+const TEXT_ANIMATION_DEFAULT = {
+  preset: "none",
+  durationInFrames: 15,
+  exit: "none",
+  exitDurationInFrames: 15,
+} as const;
+
+const TEXT_BOX_DEFAULT = {
+  bg: { enabled: false, color: "#000000", opacity: 1 },
+  border: { enabled: false, color: "#FFFFFF", width: 4 },
+  padding: 24,
+  cornerRadius: 0,
+} as const;
 
 // ---------------------------------------------------------------------------
 // Clips (discriminated union on `kind`)
@@ -157,10 +233,17 @@ export const textClipSchema = clipBase.extend({
   fontFamily: z.string().min(1).default("Geist Sans"),
   /** CSS color value rendered on the stage (content, not UI chrome). */
   color: z.string().min(1).default("#FFFFFF"),
-  animation: textAnimationSchema.default({
-    preset: "none",
-    durationInFrames: 15,
+  /** Bold / italic / underline. */
+  fontStyle: fontStyleSchema.default({
+    bold: false,
+    italic: false,
+    underline: false,
   }),
+  /** Horizontal alignment of multi-line text within its box. */
+  align: textAlignSchema.default("center"),
+  /** Optional background fill + border box behind the text. */
+  box: textBoxSchema.default(TEXT_BOX_DEFAULT),
+  animation: textAnimationSchema.default(TEXT_ANIMATION_DEFAULT),
 });
 
 // ---------------------------------------------------------------------------
@@ -194,6 +277,8 @@ export const shapeGraphicSchema = z.object({
   animation: textAnimationSchema.default({
     preset: "none",
     durationInFrames: 15,
+    exit: "none",
+    exitDurationInFrames: 15,
   }),
 });
 
@@ -219,6 +304,8 @@ export const lowerThirdGraphicSchema = z.object({
   animation: textAnimationSchema.default({
     preset: "slide-up",
     durationInFrames: 15,
+    exit: "none",
+    exitDurationInFrames: 15,
   }),
 });
 
@@ -233,6 +320,8 @@ export const badgeGraphicSchema = z.object({
   animation: textAnimationSchema.default({
     preset: "pop",
     durationInFrames: 12,
+    exit: "none",
+    exitDurationInFrames: 15,
   }),
 });
 

@@ -6,6 +6,7 @@ import type {
   audioTrackSchema,
   clipSchema,
   colorGradeSchema,
+  fontStyleSchema,
   framingSchema,
   graphicClipSchema,
   graphicParamsSchema,
@@ -14,9 +15,14 @@ import type {
   overlayGraphicSchema,
   progressBarGraphicSchema,
   shapeGraphicSchema,
+  textAlignSchema,
   textAnimationPresetSchema,
   textAnimationSchema,
+  textBoxBorderSchema,
+  textBoxFillSchema,
+  textBoxSchema,
   textClipSchema,
+  textExitPresetSchema,
   textTrackSchema,
   timelineSchema,
   trackSchema,
@@ -33,7 +39,13 @@ export type TransitionPreset = z.infer<typeof transitionPresetSchema>;
 export type TransitionDirection = z.infer<typeof transitionDirectionSchema>;
 export type Transition = z.infer<typeof transitionSchema>;
 export type TextAnimationPreset = z.infer<typeof textAnimationPresetSchema>;
+export type TextExitPreset = z.infer<typeof textExitPresetSchema>;
 export type TextAnimation = z.infer<typeof textAnimationSchema>;
+export type FontStyle = z.infer<typeof fontStyleSchema>;
+export type TextAlign = z.infer<typeof textAlignSchema>;
+export type TextBox = z.infer<typeof textBoxSchema>;
+export type TextBoxFill = z.infer<typeof textBoxFillSchema>;
+export type TextBoxBorder = z.infer<typeof textBoxBorderSchema>;
 export type VideoClip = z.infer<typeof videoClipSchema>;
 export type AudioClip = z.infer<typeof audioClipSchema>;
 export type TextClip = z.infer<typeof textClipSchema>;
