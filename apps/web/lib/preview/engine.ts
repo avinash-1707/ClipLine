@@ -1,10 +1,16 @@
 import {
+  clipDurationInFrames,
   FPS,
   OUTPUT_HEIGHT,
   OUTPUT_WIDTH,
+  resolveTextAnimation,
+  resolveTextLayout,
   resolveVideoFraming,
+  TEXT_LINE_HEIGHT,
   timelineDurationInFrames,
+  wordRevealAlpha,
   type Framing,
+  type TextClip,
 } from "@clipline/timeline";
 import { useTimelineStore } from "@/store/timeline";
 import {
@@ -55,6 +61,16 @@ export class PreviewEngine {
    * store commit — one undo step — happens on pointer up). Cleared after.
    */
   private framingOverride: { clipId: string; framing: Framing } | null = null;
+  /**
+   * Live position for the text clip being dragged on the stage — same transient
+   * pattern as framingOverride. While set, drawText uses it instead of the
+   * clip's stored normalized position; the store commit (one undo step) happens
+   * on pointer up.
+   */
+  private textPosOverride: {
+    clipId: string;
+    position: { x: number; y: number };
+  } | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -87,6 +103,100 @@ export class PreviewEngine {
   setFramingOverride(clipId: string, framing: Framing | null) {
     this.framingOverride = framing ? { clipId, framing } : null;
     if (!useTimelineStore.getState().isPlaying) this.drawCurrent();
+  }
+
+  /**
+   * Set (or clear) the transient normalized position for a text clip during a
+   * stage drag. Redraws immediately when paused so the caption tracks the
+   * pointer with no React state in the hot path.
+   */
+  setTextPositionOverride(
+    clipId: string,
+    position: { x: number; y: number } | null,
+  ) {
+    this.textPosOverride = position ? { clipId, position } : null;
+    if (!useTimelineStore.getState().isPlaying) this.drawCurrent();
+  }
+
+  /** Display-space scale: one output px maps to this many CSS px on screen. */
+  private displayScale(): number {
+    return this.canvas.getBoundingClientRect().width / this.canvas.width || 1;
+  }
+
+  /**
+   * Topmost active text clip whose box contains the output-space point, or null.
+   * Used by the stage to begin a text drag. `grabMarginPx` widens the hit area
+   * for small unboxed text. Iterates visual top-down (last-drawn first).
+   */
+  hitTestText(
+    outX: number,
+    outY: number,
+    grabMarginPx = 8,
+  ): string | null {
+    const { timeline, playheadFrame } = useTimelineStore.getState();
+    if (!timeline) return null;
+    const texts = resolveTexts(timeline, playheadFrame);
+    for (let i = texts.length - 1; i >= 0; i--) {
+      const { clip } = texts[i]!;
+      const layout = this.layoutFor(clip, clip.position);
+      const m = layout.padding > 0 ? 0 : grabMarginPx;
+      const { x, y, w, h } = layout.box;
+      if (
+        outX >= x - m &&
+        outX <= x + w + m &&
+        outY >= y - m &&
+        outY <= y + h + m
+      ) {
+        return clip.id;
+      }
+    }
+    return null;
+  }
+
+  /** Box rect (output px) of an active text clip, honoring a live drag
+   * override. Used by the stage to position the selection outline. */
+  getTextBox(
+    clipId: string,
+  ): { x: number; y: number; w: number; h: number } | null {
+    const { timeline, playheadFrame } = useTimelineStore.getState();
+    if (!timeline) return null;
+    const found = resolveTexts(timeline, playheadFrame).find(
+      (t) => t.clip.id === clipId,
+    );
+    if (!found) return null;
+    const position =
+      this.textPosOverride && this.textPosOverride.clipId === clipId
+        ? this.textPosOverride.position
+        : found.clip.position;
+    return this.layoutFor(found.clip, position).box;
+  }
+
+  /** Canvas font string for a text clip (style + weight + size + family). */
+  private textFont(clip: TextClip): string {
+    const weight = clip.fontStyle.bold ? 700 : 600;
+    const italic = clip.fontStyle.italic ? "italic " : "";
+    return `${italic}${weight} ${clip.fontSize}px ${this.fontFamily}`;
+  }
+
+  /** Resolve a text clip's box geometry by measuring its lines on the canvas. */
+  private layoutFor(clip: TextClip, position: { x: number; y: number }) {
+    const { ctx } = this;
+    ctx.save();
+    ctx.font = this.textFont(clip);
+    const lineWidths = clip.text
+      .split("\n")
+      .map((line) => ctx.measureText(line).width);
+    ctx.restore();
+    return resolveTextLayout({
+      lineWidths,
+      fontSize: clip.fontSize,
+      lineHeightRatio: TEXT_LINE_HEIGHT,
+      align: clip.align,
+      box: clip.box,
+      position,
+      frameW: this.canvas.width,
+      frameH: this.canvas.height,
+    });
   }
 
   /** Intrinsic source size of a pooled video, or null if not ready yet. */
@@ -450,37 +560,155 @@ export class PreviewEngine {
     ctx.restore();
   }
 
-  /** Draw a text clip with its entrance animation. */
+  /** Draw a text clip: animated box + styled text. Geometry and animation come
+   * from the shared timeline helpers the Remotion layer also uses (ADR 0001). */
   private drawText({ clip, localFrame }: ActiveText) {
     const { ctx } = this;
-    const { alpha, offsetY, scale, progress } = entranceState(
+    const position =
+      this.textPosOverride && this.textPosOverride.clipId === clip.id
+        ? this.textPosOverride.position
+        : clip.position;
+    const anim = resolveTextAnimation(
       clip.animation,
       localFrame,
+      clipDurationInFrames(clip),
     );
-    const text =
-      clip.animation.preset === "typewriter"
-        ? clip.text.slice(0, Math.ceil(clip.text.length * progress))
-        : clip.text;
+    if (anim.alpha <= 0) return;
 
-    const x = clip.position.x * this.canvas.width;
-    const y = clip.position.y * this.canvas.height + offsetY;
+    const layout = this.layoutFor(clip, position);
+    const { center } = layout;
+    const { x, y, w, h } = layout.box;
+    const { bg, border, cornerRadius } = clip.box;
 
     ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.translate(x, y);
-    ctx.scale(scale, scale);
-    ctx.font = `600 ${clip.fontSize}px ${this.fontFamily}`;
+    ctx.globalAlpha = anim.alpha;
+    if (anim.blur > 0) ctx.filter = `blur(${anim.blur}px)`;
+    // animate around the box center: translate by the entrance/exit offset and
+    // scale about the center, so absolute layout coords stay usable below.
+    ctx.translate(center.x + anim.offsetX, center.y + anim.offsetY);
+    ctx.scale(anim.scale, anim.scale);
+    ctx.translate(-center.x, -center.y);
+
+    if (bg.enabled) {
+      ctx.save();
+      ctx.globalAlpha = anim.alpha * bg.opacity;
+      ctx.fillStyle = bg.color;
+      this.boxPath(x, y, w, h, cornerRadius);
+      ctx.fill();
+      ctx.restore();
+    }
+    if (border.enabled && border.width > 0) {
+      const o = border.width / 2;
+      ctx.save();
+      ctx.strokeStyle = border.color;
+      ctx.lineWidth = border.width;
+      // stroke fully OUTSIDE the box rect (matches the Remotion `outline`)
+      this.boxPath(
+        x - o,
+        y - o,
+        w + border.width,
+        h + border.width,
+        cornerRadius > 0 ? cornerRadius + o : 0,
+      );
+      ctx.stroke();
+      ctx.restore();
+    }
+
     ctx.fillStyle = clip.color;
-    ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    // multi-line: split on newlines, 1.2 line height
-    const lines = text.split("\n");
-    const lineHeight = clip.fontSize * 1.2;
-    const firstY = -((lines.length - 1) * lineHeight) / 2;
-    lines.forEach((line, i) => {
-      ctx.fillText(line, 0, firstY + i * lineHeight);
-    });
+    ctx.font = this.textFont(clip);
+
+    if (clip.animation.preset === "word-reveal") {
+      this.drawWordReveal(clip, layout, anim.progress, anim.alpha);
+    } else {
+      const shownText =
+        clip.animation.preset === "typewriter"
+          ? clip.text.slice(0, Math.ceil(clip.text.length * anim.progress))
+          : clip.text;
+      const lines = shownText.split("\n");
+      ctx.textAlign = clip.align;
+      lines.forEach((line, i) => {
+        const ln = layout.lines[i];
+        if (!ln) return;
+        ctx.fillText(line, ln.x, ln.y);
+        if (clip.fontStyle.underline && line) {
+          this.underline(line, ln.x, ln.y, clip);
+        }
+      });
+    }
+
     ctx.restore();
+  }
+
+  /** Trace a (optionally rounded) rect onto the current path. */
+  private boxPath(x: number, y: number, w: number, h: number, r: number) {
+    const { ctx } = this;
+    ctx.beginPath();
+    if (r > 0) ctx.roundRect(x, y, w, h, Math.min(r, w / 2, h / 2));
+    else ctx.rect(x, y, w, h);
+  }
+
+  /** Left edge of a line given its width and the clip's alignment. */
+  private lineLeft(anchorX: number, lineW: number, clip: TextClip): number {
+    return clip.align === "left"
+      ? anchorX
+      : clip.align === "right"
+        ? anchorX - lineW
+        : anchorX - lineW / 2;
+  }
+
+  /** Underline stroke under one drawn line (baseline-middle text). */
+  private underline(line: string, anchorX: number, anchorY: number, clip: TextClip) {
+    const { ctx } = this;
+    const lineW = ctx.measureText(line).width;
+    const left = this.lineLeft(anchorX, lineW, clip);
+    const thickness = Math.max(clip.fontSize * 0.06, 2);
+    const uy = anchorY + clip.fontSize * 0.42;
+    ctx.fillRect(left, uy, lineW, thickness);
+  }
+
+  /** Word-reveal entrance: words light up left to right with `progress`. */
+  private drawWordReveal(
+    clip: TextClip,
+    layout: ReturnType<PreviewEngine["layoutFor"]>,
+    progress: number,
+    baseAlpha: number,
+  ) {
+    const { ctx } = this;
+    const lines = clip.text.split("\n");
+    const totalWords = lines.reduce(
+      (n, line) => n + line.split(/\s+/).filter(Boolean).length,
+      0,
+    );
+    ctx.textAlign = "left";
+    let wordIndex = 0;
+    lines.forEach((line, i) => {
+      const ln = layout.lines[i];
+      if (!ln) return;
+      const lineW = ctx.measureText(line).width;
+      let cursor = this.lineLeft(ln.x, lineW, clip);
+      const spaceW = ctx.measureText(" ").width;
+      for (const token of line.split(" ")) {
+        if (token === "") {
+          cursor += spaceW;
+          continue;
+        }
+        const wordW = ctx.measureText(token).width;
+        const a = wordRevealAlpha(progress, wordIndex, totalWords);
+        if (a > 0) {
+          ctx.save();
+          ctx.globalAlpha = baseAlpha * a;
+          ctx.fillText(token, cursor, ln.y);
+          if (clip.fontStyle.underline) {
+            const thickness = Math.max(clip.fontSize * 0.06, 2);
+            ctx.fillRect(cursor, ln.y + clip.fontSize * 0.42, wordW, thickness);
+          }
+          ctx.restore();
+        }
+        cursor += wordW + spaceW;
+        wordIndex++;
+      }
+    });
   }
 
   private drawBlack() {
