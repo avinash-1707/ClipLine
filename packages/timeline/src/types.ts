@@ -2,6 +2,10 @@ import type { z } from "zod";
 import type {
   audioClipSchema,
   badgeGraphicSchema,
+  captionClipSchema,
+  captionStyleSchema,
+  captionTrackSchema,
+  captionWordSchema,
   lowerThirdGraphicSchema,
   audioTrackSchema,
   clipSchema,
@@ -50,6 +54,9 @@ export type VideoClip = z.infer<typeof videoClipSchema>;
 export type AudioClip = z.infer<typeof audioClipSchema>;
 export type TextClip = z.infer<typeof textClipSchema>;
 export type GraphicClip = z.infer<typeof graphicClipSchema>;
+export type CaptionWord = z.infer<typeof captionWordSchema>;
+export type CaptionStyle = z.infer<typeof captionStyleSchema>;
+export type CaptionClip = z.infer<typeof captionClipSchema>;
 export type GraphicParams = z.infer<typeof graphicParamsSchema>;
 export type GraphicShape = z.infer<typeof graphicShapeSchema>;
 export type OverlayGraphic = z.infer<typeof overlayGraphicSchema>;
@@ -62,5 +69,6 @@ export type VideoTrack = z.infer<typeof videoTrackSchema>;
 export type AudioTrack = z.infer<typeof audioTrackSchema>;
 export type TextTrack = z.infer<typeof textTrackSchema>;
 export type GraphicTrack = z.infer<typeof graphicTrackSchema>;
+export type CaptionTrack = z.infer<typeof captionTrackSchema>;
 export type Track = z.infer<typeof trackSchema>;
 export type Timeline = z.infer<typeof timelineSchema>;

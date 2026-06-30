@@ -8,7 +8,7 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
-    "test": "tsx src/framing.test.ts && tsx src/text-geometry.test.ts"
+    "test": "tsx src/framing.test.ts && tsx src/text-geometry.test.ts && tsx src/caption.test.ts"
   },
   "dependencies": {
     "zod": "^4.4.3"
