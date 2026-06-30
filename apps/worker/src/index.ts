@@ -1,9 +1,10 @@
-import { INGEST_QUEUE, RENDER_QUEUE } from "@clipline/jobs";
+import { INGEST_QUEUE, RENDER_QUEUE, TRANSCRIBE_QUEUE } from "@clipline/jobs";
 import { Worker } from "bullmq";
 import { env } from "./lib/env";
 import { logger } from "./lib/logger";
 import { processIngestJob } from "./processors/ingest";
 import { processRenderJob } from "./processors/render";
+import { processTranscribeJob } from "./processors/transcribe";
 import { connection } from "./queues/connection";
 
 const ingestWorker = new Worker(INGEST_QUEUE, processIngestJob, {
@@ -17,9 +18,16 @@ const renderWorker = new Worker(RENDER_QUEUE, processRenderJob, {
   concurrency: 1,
 });
 
+// STT is network-bound (download + Deepgram round-trip); a few run concurrently
+const transcribeWorker = new Worker(TRANSCRIBE_QUEUE, processTranscribeJob, {
+  connection: connection.duplicate(),
+  concurrency: env.TRANSCRIBE_CONCURRENCY,
+});
+
 for (const [name, worker] of [
   [INGEST_QUEUE, ingestWorker],
   [RENDER_QUEUE, renderWorker],
+  [TRANSCRIBE_QUEUE, transcribeWorker],
 ] as const) {
   worker.on("completed", (job) => {
     logger.child({ jobId: job.id, queue: name }).info(
@@ -36,13 +44,21 @@ for (const [name, worker] of [
 }
 
 logger.info(
-  { ingestConcurrency: env.INGEST_CONCURRENCY },
-  `worker up: ${INGEST_QUEUE} (x${env.INGEST_CONCURRENCY}), ${RENDER_QUEUE} (x1)`,
+  {
+    ingestConcurrency: env.INGEST_CONCURRENCY,
+    transcribeConcurrency: env.TRANSCRIBE_CONCURRENCY,
+    sttEngine: env.STT_ENGINE,
+  },
+  `worker up: ${INGEST_QUEUE} (x${env.INGEST_CONCURRENCY}), ${RENDER_QUEUE} (x1), ${TRANSCRIBE_QUEUE} (x${env.TRANSCRIBE_CONCURRENCY})`,
 );
 
 async function shutdown(signal: string) {
   logger.info({ signal }, "worker shutting down");
-  await Promise.all([ingestWorker.close(), renderWorker.close()]);
+  await Promise.all([
+    ingestWorker.close(),
+    renderWorker.close(),
+    transcribeWorker.close(),
+  ]);
   connection.disconnect();
   logger.info("worker shutdown complete");
   process.exit(0);

@@ -9,6 +9,10 @@ import { fail } from "./lib/respond";
 import { assetRoutes, projectAssetRoutes } from "./routes/assets";
 import { projectRoutes } from "./routes/projects";
 import { projectRenderRoutes, renderJobRoutes } from "./routes/render";
+import {
+  projectTranscribeRoutes,
+  transcribeJobRoutes,
+} from "./routes/transcribe";
 
 const app = new Hono<AppEnv>();
 
@@ -21,6 +25,8 @@ app.route("/projects/:projectId/assets", projectAssetRoutes);
 app.route("/assets", assetRoutes);
 app.route("/projects/:projectId/render", projectRenderRoutes);
 app.route("/render-jobs", renderJobRoutes);
+app.route("/projects/:projectId/transcribe", projectTranscribeRoutes);
+app.route("/transcribe-jobs", transcribeJobRoutes);
 
 startQueueEventListeners();
 

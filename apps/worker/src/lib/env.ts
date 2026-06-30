@@ -21,6 +21,14 @@ const envSchema = z.object({
   CLOUDINARY_API_SECRET: z.string().min(1),
   /** Parallel ingest jobs; render stays at 1 (set in the render unit). */
   INGEST_CONCURRENCY: z.coerce.number().int().positive().default(2),
+  /** Parallel transcribe jobs; STT is network-bound so a few run at once. */
+  TRANSCRIBE_CONCURRENCY: z.coerce.number().int().positive().default(3),
+  // Speech-to-text engine for auto subtitles. "deepgram" (default) calls the
+  // Deepgram REST API; "fake" returns deterministic words for local/E2E runs.
+  STT_ENGINE: z.enum(["deepgram", "fake"]).default("deepgram"),
+  // Optional at boot so the worker still runs ingest/render without it; the
+  // deepgram adapter throws a clear error if invoked without a key.
+  DEEPGRAM_API_KEY: z.string().min(1).optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);

@@ -4,8 +4,11 @@ import {
   ingestResultSchema,
   RENDER_QUEUE,
   renderResultSchema,
+  TRANSCRIBE_QUEUE,
+  transcribeResultSchema,
   type IngestJob,
   type RenderJob,
+  type TranscribeJob,
 } from "@clipline/jobs";
 import { Queue, QueueEvents } from "bullmq";
 import IORedis from "ioredis";
@@ -18,12 +21,21 @@ import {
   markRenderStarted,
   updateRenderProgress,
 } from "../services/render-jobs";
+import {
+  markTranscribeCompleted,
+  markTranscribeFailed,
+  markTranscribePhase,
+  type TranscribePhase,
+} from "../services/transcribe-jobs";
 import { env } from "./env";
 
 const connection = new IORedis(env.REDIS_URL, { maxRetriesPerRequest: null });
 
 export const ingestQueue = new Queue<IngestJob>(INGEST_QUEUE, { connection });
 export const renderQueue = new Queue<RenderJob>(RENDER_QUEUE, { connection });
+export const transcribeQueue = new Queue<TranscribeJob>(TRANSCRIBE_QUEUE, {
+  connection,
+});
 
 /**
  * Render progress fan-out for SSE handlers. Events are keyed by render job
@@ -31,6 +43,14 @@ export const renderQueue = new Queue<RenderJob>(RENDER_QUEUE, { connection });
  */
 export const renderEvents = new EventEmitter();
 renderEvents.setMaxListeners(100);
+
+/**
+ * Transcribe progress fan-out for SSE handlers, keyed by transcribe job id.
+ * Payloads are { status } phase events (queued/downloading/transcribing) or
+ * { status, error? } terminal events.
+ */
+export const transcribeEvents = new EventEmitter();
+transcribeEvents.setMaxListeners(100);
 
 export async function enqueueRender(job: RenderJob) {
   try {
@@ -46,6 +66,30 @@ export async function enqueueRender(job: RenderJob) {
     );
   } catch (error) {
     logger.error({ err: error, renderJobId: job.renderJobId }, "render enqueue failed");
+    throw new AppError(503, "job queue is unavailable — is redis running?");
+  }
+}
+
+export async function enqueueTranscribe(job: TranscribeJob) {
+  try {
+    await transcribeQueue.add("transcribe", job, {
+      // jobId = transcribeJobId so queue events map back to the row
+      jobId: job.transcribeJobId,
+      // STT is network-bound; a transient Deepgram/network hiccup gets one retry
+      attempts: 2,
+      backoff: { type: "exponential", delay: 3000 },
+      removeOnComplete: 100,
+      removeOnFail: 100,
+    });
+    logger.info(
+      { jobId: job.transcribeJobId, projectId: job.projectId },
+      "transcribe job enqueued",
+    );
+  } catch (error) {
+    logger.error(
+      { err: error, transcribeJobId: job.transcribeJobId },
+      "transcribe enqueue failed",
+    );
     throw new AppError(503, "job queue is unavailable — is redis running?");
   }
 }
@@ -161,5 +205,58 @@ export function startQueueEventListeners() {
 
   render.on("error", (error) => {
     logger.error({ err: error }, "render queue events error");
+  });
+
+  const transcribe = new QueueEvents(TRANSCRIBE_QUEUE, {
+    connection: connection.duplicate(),
+  });
+
+  transcribe.on("active", async ({ jobId }) => {
+    // The worker's first act is downloading the audio; reflect that immediately.
+    logger
+      .child({ jobId, transcribeJobId: jobId })
+      .info({ status: "downloading" }, "transcribe started");
+    transcribeEvents.emit(jobId, { status: "downloading" });
+    await markTranscribePhase(jobId, "downloading");
+  });
+
+  transcribe.on("progress", async ({ jobId, data }) => {
+    // Coarse phase string carried via job.updateProgress (no numeric progress).
+    const phase: TranscribePhase =
+      data === "transcribing" ? "transcribing" : "downloading";
+    logger.child({ jobId, transcribeJobId: jobId }).debug({ phase }, "transcribe phase");
+    // emit FIRST so an SSE client subscribed in the gap doesn't miss it
+    transcribeEvents.emit(jobId, { status: phase });
+    await markTranscribePhase(jobId, phase);
+  });
+
+  transcribe.on("completed", async ({ jobId, returnvalue }) => {
+    const log = logger.child({ jobId, transcribeJobId: jobId });
+    try {
+      const result = transcribeResultSchema.parse(returnvalue);
+      await markTranscribeCompleted(jobId, result.words);
+      log.info({ status: "completed", words: result.words.length }, "transcribe completed");
+      transcribeEvents.emit(jobId, { status: "completed" });
+    } catch (error) {
+      log.error({ err: error }, "transcribe result rejected");
+      const reason = "transcription finished but produced an unreadable result";
+      await markTranscribeFailed(jobId, reason);
+      transcribeEvents.emit(jobId, { status: "failed", error: reason });
+    }
+  });
+
+  transcribe.on("failed", async ({ jobId, failedReason }) => {
+    const reason =
+      failedReason ||
+      "transcription failed unexpectedly (the job may have run out of memory or been killed)";
+    logger
+      .child({ jobId, transcribeJobId: jobId })
+      .error({ status: "failed", failedReason: reason }, "transcribe job failed");
+    await markTranscribeFailed(jobId, reason);
+    transcribeEvents.emit(jobId, { status: "failed", error: reason });
+  });
+
+  transcribe.on("error", (error) => {
+    logger.error({ err: error }, "transcribe queue events error");
   });
 }
