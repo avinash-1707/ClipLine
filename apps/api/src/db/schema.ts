@@ -1,3 +1,4 @@
+import type { TranscribeWord } from "@clipline/jobs";
 import type { Timeline } from "@clipline/timeline";
 import { sql } from "drizzle-orm";
 import {
@@ -82,6 +83,32 @@ export const renderJobs = pgTable("render_jobs", {
   progress: real("progress").notNull().default(0),
   outputPublicId: text("output_public_id"),
   outputUrl: text("output_url"),
+  /** Populated when status is "failed". */
+  error: text("error"),
+  ...timestamps,
+});
+
+// Coarse phases (Deepgram batch STT isn't per-word streaming, so no numeric
+// progress column): the SSE stream reports the phase name as the status.
+export const transcribeJobStatus = pgEnum("transcribe_job_status", [
+  "queued",
+  "downloading",
+  "transcribing",
+  "completed",
+  "failed",
+]);
+
+export const transcribeJobs = pgTable("transcribe_jobs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  projectId: uuid("project_id")
+    .notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  audioAssetId: uuid("audio_asset_id")
+    .notNull()
+    .references(() => assets.id, { onDelete: "cascade" }),
+  status: transcribeJobStatus("status").notNull().default("queued"),
+  /** STT word output (seconds); null until completed. */
+  result: jsonb("result").$type<{ words: TranscribeWord[] }>(),
   /** Populated when status is "failed". */
   error: text("error"),
   ...timestamps,
