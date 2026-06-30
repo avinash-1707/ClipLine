@@ -1,4 +1,8 @@
-import { createEmptyTimeline, type Timeline } from "@clipline/timeline";
+import {
+  createEmptyTimeline,
+  timelineSchema,
+  type Timeline,
+} from "@clipline/timeline";
 import { desc, eq } from "drizzle-orm";
 import { db } from "../db/client";
 import { projects } from "../db/schema";
@@ -20,7 +24,13 @@ export async function getProject(id: string) {
     .select()
     .from(projects)
     .where(eq(projects.id, id));
-  return project ?? null;
+  if (!project) return null;
+  // Migrate the persisted timeline to the current schema before it reaches the
+  // editor: zod `.default()` fills any fields added since it was last saved
+  // (framing, text box/style/align, animation.exit, …) so older blobs never
+  // reach the preview engine with undefined fields. Mirrors the render route.
+  const parsed = timelineSchema.safeParse(project.timeline);
+  return parsed.success ? { ...project, timeline: parsed.data } : project;
 }
 
 export async function createProject(name: string) {
