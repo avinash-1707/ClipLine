@@ -48,6 +48,18 @@ export interface RenderJob {
   updatedAt: string;
 }
 
+export interface TranscribeJob {
+  id: string;
+  projectId: string;
+  audioAssetId: string;
+  status: "queued" | "downloading" | "transcribing" | "completed" | "failed";
+  /** Word timings (seconds); null until completed. */
+  result: { words: { text: string; startSec: number; endSec: number }[] } | null;
+  error: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, init);
   const body = (await res.json().catch(() => null)) as
@@ -90,6 +102,15 @@ export const api = {
     get: (id: string) => request<RenderJob>(`/render-jobs/${id}`),
     /** SSE endpoint URL for EventSource. */
     progressUrl: (id: string) => `${API_URL}/render-jobs/${id}/progress`,
+  },
+  transcribe: {
+    start: (projectId: string) =>
+      request<TranscribeJob>(`/projects/${projectId}/transcribe`, {
+        method: "POST",
+      }),
+    get: (id: string) => request<TranscribeJob>(`/transcribe-jobs/${id}`),
+    /** SSE endpoint URL for EventSource. */
+    progressUrl: (id: string) => `${API_URL}/transcribe-jobs/${id}/progress`,
   },
   assets: {
     list: (projectId: string) =>

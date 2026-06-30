@@ -1,10 +1,12 @@
 import type {
   AudioTrack,
+  CaptionTrack,
   GraphicTrack,
   TextTrack,
   VideoTrack,
 } from "@clipline/timeline";
 import { AbsoluteFill, Audio, Sequence } from "remotion";
+import { CaptionLayer } from "./caption-layer";
 import { GraphicLayer } from "./graphic-layer";
 import { TextLayer } from "./text-layer";
 import type { TimelineVideoProps } from "./props";
@@ -32,6 +34,9 @@ export function TimelineVideo({
   );
   const graphicTracks = timeline.tracks.filter(
     (t): t is GraphicTrack => t.kind === "graphic",
+  );
+  const captionTracks = timeline.tracks.filter(
+    (t): t is CaptionTrack => t.kind === "caption",
   );
 
   return (
@@ -88,6 +93,19 @@ export function TimelineVideo({
             durationInFrames={clip.durationInFrames}
           >
             <TextLayer clip={clip} />
+          </Sequence>
+        )),
+      )}
+
+      {/* Captions sit topmost: above text and graphics */}
+      {captionTracks.map((track) =>
+        track.clips.map((clip) => (
+          <Sequence
+            key={clip.id}
+            from={clip.startFrame}
+            durationInFrames={clip.durationInFrames}
+          >
+            <CaptionLayer clip={clip} />
           </Sequence>
         )),
       )}

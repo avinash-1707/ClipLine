@@ -3,12 +3,16 @@ import {
   FPS,
   OUTPUT_HEIGHT,
   OUTPUT_WIDTH,
+  resolveCaptionFrame,
+  resolveCaptionLineLayout,
   resolveTextAnimation,
   resolveTextLayout,
   resolveVideoFraming,
+  strokeRingOffsets,
   TEXT_LINE_HEIGHT,
   timelineDurationInFrames,
   wordRevealAlpha,
+  type CaptionClip,
   type Framing,
   type TextClip,
 } from "@clipline/timeline";
@@ -17,9 +21,11 @@ import {
   entranceState,
   gradeToFilter,
   resolveAudio,
+  resolveCaptions,
   resolveGraphics,
   resolveTexts,
   resolveVideoLayers,
+  type ActiveCaption,
   type ActiveGraphic,
   type ActiveText,
   type ActiveVideo,
@@ -56,6 +62,12 @@ export class PreviewEngine {
   /** Resolved page font stack — canvas can't use next/font CSS variables. */
   private fontFamily = "sans-serif";
   /**
+   * Resolved Anton family string for caption rendering. next/font injects Anton
+   * as --font-anton; we resolve that at construction time so the caption canvas
+   * font string stays stable and Anton is guaranteed loaded by the time we draw.
+   */
+  private antonFamily = "Anton, sans-serif";
+  /**
    * Live framing for the clip being dragged on the stage. Lets the interaction
    * preview pan/zoom without committing to the store every pointer move (the
    * store commit — one undo step — happens on pointer up). Cleared after.
@@ -91,6 +103,12 @@ export class PreviewEngine {
     });
 
     this.fontFamily = getComputedStyle(document.body).fontFamily || "sans-serif";
+    // Resolve Anton from the CSS variable next/font injects on <html>.
+    // Falls back to bare "Anton" (system or cached) if the variable isn't set.
+    const antonVar = getComputedStyle(document.documentElement)
+      .getPropertyValue("--font-anton")
+      .trim();
+    this.antonFamily = antonVar ? `${antonVar}, Anton, sans-serif` : "Anton, sans-serif";
     this.drawBlack();
     this.loop = this.loop.bind(this);
   }
@@ -413,6 +431,10 @@ export class PreviewEngine {
     for (const text of resolveTexts(timeline, playheadFrame)) {
       this.drawText(text);
     }
+
+    for (const caption of resolveCaptions(timeline, playheadFrame)) {
+      this.drawCaption(caption);
+    }
   }
 
   /** Draw a graphic clip. Math mirrors the Remotion graphic layer exactly. */
@@ -709,6 +731,102 @@ export class PreviewEngine {
         wordIndex++;
       }
     });
+  }
+
+  /**
+   * Draw a caption clip: one line of words laid horizontally, centered on
+   * clip.position, with per-word karaoke color + a layered-fill stroke ring.
+   *
+   * Geometry contract (ADR 0001): word widths are measured here with
+   * ctx.measureText using the same Anton font the Remotion export uses (loaded
+   * via @remotion/google-fonts/Anton in caption-layer.tsx). Per-word x-centers
+   * come exclusively from resolveCaptionLineLayout — never computed inline.
+   * The active-word pop scale is computed by resolveCaptionFrame (shared pure
+   * math). The stroke is painted as layered fill copies at strokeRingOffsets —
+   * never ctx.strokeText or -webkit-text-stroke, which diverge across engines.
+   *
+   * Reduced motion (preview only): when prefers-reduced-motion is set the pop
+   * scale is clamped to 1, matching the settled position without the onset
+   * animation. The Remotion export always renders full motion.
+   */
+  private drawCaption({ clip, localFrame }: ActiveCaption) {
+    const { ctx } = this;
+    const { style } = clip;
+    const reducedMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+
+    // Resolve which word is active and per-word scales this frame.
+    const captionState = resolveCaptionFrame(clip, localFrame);
+
+    // Build the display text for each word (uppercase if requested).
+    const displayWords = clip.words.map((w) =>
+      style.uppercase ? w.text.toUpperCase() : w.text,
+    );
+
+    // Measure word widths and space width with the Anton font at fontSize.
+    // We measure in a save/restore block to avoid contaminating other draws.
+    const fontStr = `400 ${style.fontSize}px ${this.antonFamily}`;
+    ctx.save();
+    ctx.font = fontStr;
+    const wordWidths = displayWords.map((t) => ctx.measureText(t).width);
+    const spaceWidth = ctx.measureText(" ").width;
+    ctx.restore();
+
+    // Per-word x-centers: the ONLY place this geometry is computed.
+    const lineLayout = resolveCaptionLineLayout({ wordWidths, spaceWidth });
+
+    // Line center in output px.
+    const cx = clip.position.x * OUTPUT_WIDTH;
+    const cy = clip.position.y * OUTPUT_HEIGHT;
+    // Line left edge so the whole line is horizontally centered.
+    const lineLeft = cx - lineLayout.totalWidth / 2;
+
+    // Stroke ring offsets (shared, parity-safe).
+    const ringOffsets = strokeRingOffsets(style.strokeWidth);
+
+    ctx.save();
+    ctx.textBaseline = "middle";
+    ctx.textAlign = "left";
+    ctx.font = fontStr;
+
+    for (const wordLayout of lineLayout.words) {
+      const wordIndex = wordLayout.index;
+      const isActive = captionState.active[wordIndex] ?? false;
+      // Honor reduced-motion: hold scale at 1 in preview (spec: preview-only).
+      const scale =
+        reducedMotion ? 1 : (captionState.scales[wordIndex] ?? 1);
+      const displayText = displayWords[wordIndex] ?? "";
+      if (!displayText) continue;
+
+      // Word center in output px.
+      const wordCenterX = lineLeft + wordLayout.centerX;
+      const wordCenterY = cy;
+
+      // Scale about the word's own center so neighbors never reflow.
+      ctx.save();
+      ctx.translate(wordCenterX, wordCenterY);
+      ctx.scale(scale, scale);
+      ctx.translate(-wordCenterX, -wordCenterY);
+
+      const drawX = lineLeft + wordLayout.centerX - wordLayout.width / 2;
+
+      // 1. Stroke ring: layered fill copies at each ring offset in strokeColor.
+      if (ringOffsets.length > 0) {
+        ctx.fillStyle = style.strokeColor;
+        for (const { dx, dy } of ringOffsets) {
+          ctx.fillText(displayText, drawX + dx, wordCenterY + dy);
+        }
+      }
+
+      // 2. Top fill: activeColor if this word is currently spoken, else color.
+      ctx.fillStyle = isActive ? style.activeColor : style.color;
+      ctx.fillText(displayText, drawX, wordCenterY);
+
+      ctx.restore();
+    }
+
+    ctx.restore();
   }
 
   private drawBlack() {

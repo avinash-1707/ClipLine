@@ -231,7 +231,7 @@ export function EditorShell({ projectId }: { projectId: string }) {
           <ResizeHandle orientation="vertical" />
 
           <Panel id="timeline" defaultSize="32%" minSize="15%" maxSize="60%">
-            <Timeline assets={assets.data ?? []} />
+            <Timeline assets={assets.data ?? []} projectId={projectId} />
           </Panel>
         </Group>
       </div>

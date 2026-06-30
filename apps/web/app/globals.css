@@ -134,6 +134,15 @@
 
 @theme inline {
   --font-serif-display: var(--font-serif-display);
+  /* Caption accent: the one loud yellow element in the monochrome editor.
+     Matches captionStyleSchema default activeColor (#F5C842).
+     Named for captions, not repurposed from a semantic token. */
+  --color-caption-accent: var(--caption-accent);
+}
+
+:root,
+.dark {
+  --caption-accent: #F5C842;
 }
 
 /* Landing display type */

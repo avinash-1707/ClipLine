@@ -7,11 +7,13 @@ import {
   captionTrackSchema,
   clipDurationInFrames,
   clipSchema,
+  editCaptionWords,
   groupWordsIntoCaptions,
   resolveCaptionFrame,
   resolveCaptionLineLayout,
   strokeRingOffsets,
   type CaptionClip,
+  type CaptionWord,
   type SttWord,
 } from "./index";
 
@@ -225,6 +227,38 @@ test("clipSchema discriminates the caption kind", () => {
   });
   assert.equal(parsed.kind, "caption");
   assert.equal(clipDurationInFrames(parsed), 14);
+});
+
+// --- editCaptionWords -------------------------------------------------------
+
+const sampleWords: CaptionWord[] = [
+  { text: "go", startFrame: 0, endFrame: 12 },
+  { text: "viral", startFrame: 12, endFrame: 27 },
+];
+
+test("editCaptionWords preserves timing when the word count is unchanged", () => {
+  const edited = editCaptionWords(sampleWords, "GO VIRAL");
+  assert.equal(edited.length, 2);
+  assert.equal(edited[0]!.text, "GO");
+  assert.equal(edited[1]!.text, "VIRAL");
+  // timings untouched
+  assert.deepEqual(
+    edited.map((w) => [w.startFrame, w.endFrame]),
+    [[0, 12], [12, 27]],
+  );
+});
+
+test("editCaptionWords redistributes gaplessly when the count changes", () => {
+  const edited = editCaptionWords(sampleWords, "go super viral now");
+  assert.equal(edited.length, 4);
+  for (let i = 1; i < edited.length; i++) {
+    assert.equal(edited[i]!.startFrame, edited[i - 1]!.endFrame, "gapless");
+  }
+  for (const w of edited) assert.ok(w.endFrame > w.startFrame);
+});
+
+test("editCaptionWords keeps existing words on empty input", () => {
+  assert.equal(editCaptionWords(sampleWords, "   "), sampleWords);
 });
 
 console.log(`\n${passed} caption tests passed`);

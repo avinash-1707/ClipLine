@@ -4,6 +4,7 @@ import {
   graphicParamsSchema,
   MAX_DURATION_IN_FRAMES,
   type AudioClip,
+  type CaptionClip,
   type Clip,
   type Timeline,
   type Track,
@@ -421,6 +422,38 @@ export function ensureGraphicTrack(timeline: Timeline): Timeline {
     clips: [],
   });
   return { ...timeline, tracks };
+}
+
+/** Guarantee a caption track exists; captions sit on top of everything. */
+export function ensureCaptionTrack(timeline: Timeline): Timeline {
+  if (timeline.tracks.some((t) => t.kind === "caption")) return timeline;
+  return {
+    ...timeline,
+    tracks: [
+      { id: crypto.randomUUID(), kind: "caption", name: "CAP", clips: [] },
+      ...timeline.tracks,
+    ],
+  };
+}
+
+/**
+ * Replace the caption track's clips with a freshly generated set. Generating
+ * subtitles is destructive-by-design: re-running replaces the captions rather
+ * than stacking them (the PM's "regenerate" model). The clips already carry
+ * absolute startFrames and a non-overlapping order from groupWordsIntoCaptions.
+ * Returns the timeline unchanged when there are no clips (no speech detected).
+ */
+export function addCaptionClips(
+  timeline: Timeline,
+  clips: CaptionClip[],
+): Timeline {
+  if (clips.length === 0) return timeline;
+  const withTrack = ensureCaptionTrack(timeline);
+  const track = withTrack.tracks.find((t) => t.kind === "caption")!;
+  return mapTrack(withTrack, track.id, (t) => ({
+    ...t,
+    clips: sortClips(clips as Clip[]) as never,
+  }));
 }
 
 /**

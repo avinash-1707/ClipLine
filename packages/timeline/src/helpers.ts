@@ -683,6 +683,34 @@ export function groupWordsIntoCaptions(
   return clips;
 }
 
+/**
+ * Apply edited caption text back onto the word array. Editing word text (fixing
+ * a misheard word) is in v1 scope; per-word re-timing is not. So when the word
+ * count is unchanged the original per-word timing is preserved exactly; when the
+ * user adds/removes words the clip's span is redistributed evenly and gaplessly.
+ * Empty input keeps the existing words (the schema requires at least one).
+ */
+export function editCaptionWords(
+  words: CaptionWord[],
+  text: string,
+): CaptionWord[] {
+  const tokens = text
+    .split(/\s+/)
+    .map((t) => t.trim())
+    .filter((t) => t.length > 0);
+  if (tokens.length === 0 || words.length === 0) return words;
+  if (tokens.length === words.length) {
+    return words.map((w, i) => ({ ...w, text: tokens[i]! }));
+  }
+  const start0 = words[0]!.startFrame;
+  const span = Math.max(1, words[words.length - 1]!.endFrame - start0);
+  return tokens.map((t, i) => {
+    const s = start0 + Math.round((span * i) / tokens.length);
+    const e = start0 + Math.round((span * (i + 1)) / tokens.length);
+    return { text: t, startFrame: s, endFrame: Math.max(s + 1, e) };
+  });
+}
+
 /** Duration of a clip in frames, regardless of clip kind. */
 export function clipDurationInFrames(clip: Clip): number {
   return clip.kind === "text" ||
