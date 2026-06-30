@@ -10,11 +10,21 @@ import {
   type Framing,
   type GraphicClip,
   type TextAnimation,
+  type TextAnimationPreset,
   type TextClip,
+  type TextExitPreset,
   type Transition,
   type VideoClip,
 } from "@clipline/timeline";
-import { SlidersHorizontal } from "lucide-react";
+import {
+  AlignCenter,
+  AlignLeft,
+  AlignRight,
+  Bold,
+  Italic,
+  SlidersHorizontal,
+  Underline,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -149,13 +159,44 @@ function AnimationControls({
 
 const TRANSITION_PRESETS = ["none", "fade", "wipe", "slide"] as const;
 const DIRECTIONS = ["left", "right", "up", "down"] as const;
-const TEXT_ANIMATIONS = [
+
+const TEXT_ANIMATION_LABELS: Record<TextAnimationPreset, string> = {
+  none: "None",
+  "fade-in": "Fade in",
+  "slide-up": "Slide up",
+  pop: "Pop",
+  typewriter: "Typewriter",
+  "blur-in": "Blur in",
+  "slide-in-right": "Slide in (right)",
+  "scale-pop": "Scale pop",
+  "word-reveal": "Word reveal",
+};
+
+const TEXT_ANIMATIONS: readonly TextAnimationPreset[] = [
   "none",
   "fade-in",
   "slide-up",
   "pop",
   "typewriter",
-] as const;
+  "blur-in",
+  "slide-in-right",
+  "scale-pop",
+  "word-reveal",
+];
+
+const TEXT_EXIT_LABELS: Record<TextExitPreset, string> = {
+  none: "None",
+  "fade-out": "Fade out",
+  "slide-out-up": "Slide out (up)",
+  "scale-out": "Scale out",
+};
+
+const TEXT_EXIT_PRESETS: readonly TextExitPreset[] = [
+  "none",
+  "fade-out",
+  "slide-out-up",
+  "scale-out",
+];
 
 function VideoInspector({ clip }: { clip: VideoClip }) {
   const update = useTimelineStore((s) => s.updateClip);
@@ -349,8 +390,12 @@ function VideoInspector({ clip }: { clip: VideoClip }) {
 
 function TextInspector({ clip }: { clip: TextClip }) {
   const update = useTimelineStore((s) => s.updateClip);
+
+  const boxActive = clip.box.bg.enabled || clip.box.border.enabled;
+
   return (
     <>
+      {/* ── Text ─────────────────────────────────────────────────── */}
       <Section title="Text">
         <Input
           value={clip.text}
@@ -375,8 +420,301 @@ function TextInspector({ clip }: { clip: TextClip }) {
             className="h-7 w-12 cursor-pointer rounded-md border border-border bg-transparent p-0.5"
           />
         </div>
+
+        {/* Font style: B / I / U toggles */}
+        <div className="flex items-center justify-between">
+          <span className="label-mono text-muted-foreground">Style</span>
+          <div className="flex gap-1">
+            <Button
+              variant="outline"
+              size="icon-sm"
+              aria-pressed={clip.fontStyle.bold}
+              className={
+                clip.fontStyle.bold
+                  ? "border-foreground/30 bg-foreground/10 text-foreground"
+                  : ""
+              }
+              onClick={() =>
+                update(clip.id, {
+                  fontStyle: {
+                    ...clip.fontStyle,
+                    bold: !clip.fontStyle.bold,
+                  },
+                })
+              }
+            >
+              <Bold className="size-3.5 font-bold" strokeWidth={2.5} />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon-sm"
+              aria-pressed={clip.fontStyle.italic}
+              className={
+                clip.fontStyle.italic
+                  ? "border-foreground/30 bg-foreground/10 text-foreground"
+                  : ""
+              }
+              onClick={() =>
+                update(clip.id, {
+                  fontStyle: {
+                    ...clip.fontStyle,
+                    italic: !clip.fontStyle.italic,
+                  },
+                })
+              }
+            >
+              <Italic className="size-3.5" />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon-sm"
+              aria-pressed={clip.fontStyle.underline}
+              className={
+                clip.fontStyle.underline
+                  ? "border-foreground/30 bg-foreground/10 text-foreground"
+                  : ""
+              }
+              onClick={() =>
+                update(clip.id, {
+                  fontStyle: {
+                    ...clip.fontStyle,
+                    underline: !clip.fontStyle.underline,
+                  },
+                })
+              }
+            >
+              <Underline className="size-3.5" />
+            </Button>
+          </div>
+        </div>
+
+        {/* Alignment: Left / Center / Right segmented toggle */}
+        <div className="flex items-center justify-between">
+          <span className="label-mono text-muted-foreground">Align</span>
+          <div className="flex gap-1">
+            <Button
+              variant="outline"
+              size="icon-sm"
+              aria-pressed={clip.align === "left"}
+              className={
+                clip.align === "left"
+                  ? "border-foreground/30 bg-foreground/10 text-foreground"
+                  : ""
+              }
+              onClick={() => update(clip.id, { align: "left" })}
+            >
+              <AlignLeft className="size-3.5" />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon-sm"
+              aria-pressed={clip.align === "center"}
+              className={
+                clip.align === "center"
+                  ? "border-foreground/30 bg-foreground/10 text-foreground"
+                  : ""
+              }
+              onClick={() => update(clip.id, { align: "center" })}
+            >
+              <AlignCenter className="size-3.5" />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon-sm"
+              aria-pressed={clip.align === "right"}
+              className={
+                clip.align === "right"
+                  ? "border-foreground/30 bg-foreground/10 text-foreground"
+                  : ""
+              }
+              onClick={() => update(clip.id, { align: "right" })}
+            >
+              <AlignRight className="size-3.5" />
+            </Button>
+          </div>
+        </div>
       </Section>
 
+      {/* ── Background ───────────────────────────────────────────── */}
+      <Section title="Background">
+        {/* Enable toggle */}
+        <div className="flex items-center justify-between">
+          <span className="label-mono text-muted-foreground">Enable</span>
+          <Button
+            variant="outline"
+            size="sm"
+            aria-pressed={clip.box.bg.enabled}
+            className={
+              clip.box.bg.enabled
+                ? "border-foreground/30 bg-foreground/10 text-foreground"
+                : ""
+            }
+            onClick={() =>
+              update(clip.id, {
+                box: {
+                  ...clip.box,
+                  bg: { ...clip.box.bg, enabled: !clip.box.bg.enabled },
+                },
+              })
+            }
+          >
+            {clip.box.bg.enabled ? "On" : "Off"}
+          </Button>
+        </div>
+
+        {clip.box.bg.enabled && (
+          <>
+            <ColorRow
+              label="Color"
+              value={clip.box.bg.color}
+              onChange={(v) =>
+                update(clip.id, {
+                  box: {
+                    ...clip.box,
+                    bg: { ...clip.box.bg, color: v },
+                  },
+                })
+              }
+            />
+            <SliderRow
+              label="Opacity"
+              value={clip.box.bg.opacity}
+              min={0}
+              max={1}
+              step={0.01}
+              onChange={(v) =>
+                update(clip.id, {
+                  box: {
+                    ...clip.box,
+                    bg: { ...clip.box.bg, opacity: v },
+                  },
+                })
+              }
+            />
+          </>
+        )}
+
+        {/* Padding + corner radius shown when bg OR border is active */}
+        {boxActive && (
+          <>
+            <SliderRow
+              label="Padding"
+              value={clip.box.padding}
+              min={0}
+              max={256}
+              step={1}
+              display={`${Math.round(clip.box.padding)}px`}
+              onChange={(v) =>
+                update(clip.id, { box: { ...clip.box, padding: v } })
+              }
+            />
+            <SliderRow
+              label="Radius"
+              value={clip.box.cornerRadius}
+              min={0}
+              max={256}
+              step={1}
+              display={`${Math.round(clip.box.cornerRadius)}px`}
+              onChange={(v) =>
+                update(clip.id, { box: { ...clip.box, cornerRadius: v } })
+              }
+            />
+          </>
+        )}
+      </Section>
+
+      {/* ── Border ───────────────────────────────────────────────── */}
+      <Section title="Border">
+        {/* Enable toggle */}
+        <div className="flex items-center justify-between">
+          <span className="label-mono text-muted-foreground">Enable</span>
+          <Button
+            variant="outline"
+            size="sm"
+            aria-pressed={clip.box.border.enabled}
+            className={
+              clip.box.border.enabled
+                ? "border-foreground/30 bg-foreground/10 text-foreground"
+                : ""
+            }
+            onClick={() =>
+              update(clip.id, {
+                box: {
+                  ...clip.box,
+                  border: {
+                    ...clip.box.border,
+                    enabled: !clip.box.border.enabled,
+                  },
+                },
+              })
+            }
+          >
+            {clip.box.border.enabled ? "On" : "Off"}
+          </Button>
+        </div>
+
+        {clip.box.border.enabled && (
+          <>
+            <ColorRow
+              label="Color"
+              value={clip.box.border.color}
+              onChange={(v) =>
+                update(clip.id, {
+                  box: {
+                    ...clip.box,
+                    border: { ...clip.box.border, color: v },
+                  },
+                })
+              }
+            />
+            <SliderRow
+              label="Width"
+              value={clip.box.border.width}
+              min={0}
+              max={64}
+              step={1}
+              display={`${Math.round(clip.box.border.width)}px`}
+              onChange={(v) =>
+                update(clip.id, {
+                  box: {
+                    ...clip.box,
+                    border: { ...clip.box.border, width: v },
+                  },
+                })
+              }
+            />
+            {/* Padding + radius also shown here when bg is off but border is on */}
+            {!clip.box.bg.enabled && (
+              <>
+                <SliderRow
+                  label="Padding"
+                  value={clip.box.padding}
+                  min={0}
+                  max={256}
+                  step={1}
+                  display={`${Math.round(clip.box.padding)}px`}
+                  onChange={(v) =>
+                    update(clip.id, { box: { ...clip.box, padding: v } })
+                  }
+                />
+                <SliderRow
+                  label="Radius"
+                  value={clip.box.cornerRadius}
+                  min={0}
+                  max={256}
+                  step={1}
+                  display={`${Math.round(clip.box.cornerRadius)}px`}
+                  onChange={(v) =>
+                    update(clip.id, { box: { ...clip.box, cornerRadius: v } })
+                  }
+                />
+              </>
+            )}
+          </>
+        )}
+      </Section>
+
+      {/* ── Position ─────────────────────────────────────────────── */}
       <Section title="Position">
         <SliderRow
           label="X"
@@ -400,14 +738,16 @@ function TextInspector({ clip }: { clip: TextClip }) {
         />
       </Section>
 
+      {/* ── Animation ────────────────────────────────────────────── */}
       <Section title="Animation">
+        {/* Entrance */}
         <Select
           value={clip.animation.preset}
           onValueChange={(v) =>
             update(clip.id, {
               animation: {
                 ...clip.animation,
-                preset: v as TextClip["animation"]["preset"],
+                preset: v as TextAnimationPreset,
               },
             })
           }
@@ -418,7 +758,7 @@ function TextInspector({ clip }: { clip: TextClip }) {
           <SelectContent>
             {TEXT_ANIMATIONS.map((a) => (
               <SelectItem key={a} value={a}>
-                {a}
+                {TEXT_ANIMATION_LABELS[a]}
               </SelectItem>
             ))}
           </SelectContent>
@@ -434,6 +774,45 @@ function TextInspector({ clip }: { clip: TextClip }) {
             onChange={(v) =>
               update(clip.id, {
                 animation: { ...clip.animation, durationInFrames: v },
+              })
+            }
+          />
+        )}
+
+        {/* Exit */}
+        <Select
+          value={clip.animation.exit}
+          onValueChange={(v) =>
+            update(clip.id, {
+              animation: {
+                ...clip.animation,
+                exit: v as TextExitPreset,
+              },
+            })
+          }
+        >
+          <SelectTrigger className="w-full" size="sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {TEXT_EXIT_PRESETS.map((e) => (
+              <SelectItem key={e} value={e}>
+                {TEXT_EXIT_LABELS[e]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {clip.animation.exit !== "none" && (
+          <SliderRow
+            label="Exit duration"
+            value={clip.animation.exitDurationInFrames}
+            min={5}
+            max={90}
+            step={1}
+            display={`${(clip.animation.exitDurationInFrames / FPS).toFixed(2)}s`}
+            onChange={(v) =>
+              update(clip.id, {
+                animation: { ...clip.animation, exitDurationInFrames: v },
               })
             }
           />

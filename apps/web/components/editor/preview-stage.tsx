@@ -9,8 +9,10 @@ import {
   OUTPUT_HEIGHT,
   OUTPUT_WIDTH,
   resolveVideoFraming,
+  snapToCenterlines,
   zoomFramingAround,
   type Framing,
+  type TextClip,
   type VideoClip,
 } from "@clipline/timeline";
 import { Pause, Play, RotateCcw, SkipBack, ZoomIn, ZoomOut } from "lucide-react";
@@ -32,6 +34,10 @@ const NUDGE = 12;
 const NUDGE_SHIFT = 60;
 /** Debounce for committing wheel/key framing changes as one undo step. */
 const COMMIT_DELAY = 200;
+/** Center-snap catch zone for dragging text, in output px (Alt bypasses). */
+const SNAP_THRESHOLD_PX = 8;
+
+const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
 
 const framingInput = (size: { w: number; h: number }, framing: Framing) => ({
   srcW: size.w,
@@ -52,6 +58,11 @@ export function PreviewStage({ assets }: { assets: Asset[] }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const ghostRef = useRef<HTMLVideoElement>(null);
   const engineRef = useRef<PreviewEngine | null>(null);
+  // DOM overlays for text editing (positioned imperatively; no React state in
+  // the drag hot path): the selection outline and the two center guide lines.
+  const selBoxRef = useRef<HTMLDivElement>(null);
+  const guideVRef = useRef<HTMLDivElement>(null);
+  const guideHRef = useRef<HTMLDivElement>(null);
 
   const isPlaying = useTimelineStore((s) => s.isPlaying);
   const playheadFrame = useTimelineStore((s) => s.playheadFrame);
@@ -74,6 +85,15 @@ export function PreviewStage({ assets }: { assets: Asset[] }) {
       videoClip.framing.offsetX !== 0 ||
       videoClip.framing.offsetY !== 0);
 
+  const textClip =
+    selectedClip && selectedClip.kind === "text" ? selectedClip : null;
+  const textInRange =
+    textClip != null &&
+    playheadFrame >= textClip.startFrame &&
+    playheadFrame < textClip.startFrame + clipDurationInFrames(textClip);
+  // A selected text clip under the playhead can be dragged on the stage.
+  const textActive = textClip != null && !isPlaying && textInRange;
+
   // Active drag gesture (refs so pointer moves never touch React state).
   const drag = useRef<{
     startX: number;
@@ -82,6 +102,14 @@ export function PreviewStage({ assets }: { assets: Asset[] }) {
     size: { w: number; h: number };
     clipId: string;
     last: Framing;
+  } | null>(null);
+  // Active text-position drag (normalized), same transient-ref pattern.
+  const textDrag = useRef<{
+    startX: number;
+    startY: number;
+    start: { x: number; y: number };
+    clipId: string;
+    last: { x: number; y: number };
   } | null>(null);
   const clampTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Pending debounced store commit (wheel/keys) so a burst is one undo step.
@@ -106,6 +134,84 @@ export function PreviewStage({ assets }: { assets: Asset[] }) {
     )
       return null;
     return clip;
+  };
+
+  /** The selected text clip if it can be dragged on the stage right now. */
+  const liveTextClip = (): TextClip | null => {
+    const s = useTimelineStore.getState();
+    const clip = selectSelectedClip(s);
+    if (!clip || clip.kind !== "text" || s.isPlaying) return null;
+    const dur = clipDurationInFrames(clip);
+    if (
+      s.playheadFrame < clip.startFrame ||
+      s.playheadFrame >= clip.startFrame + dur
+    )
+      return null;
+    return clip;
+  };
+
+  /** Position the text selection outline over a clip's box (display px). */
+  const positionSelBox = (clipId: string) => {
+    const el = selBoxRef.current;
+    const s = displayScale();
+    const box = engineRef.current?.getTextBox(clipId);
+    if (!el || s === 0 || !box) {
+      if (el) el.style.display = "none";
+      return;
+    }
+    el.style.display = "block";
+    el.style.left = `${box.x * s}px`;
+    el.style.top = `${box.y * s}px`;
+    el.style.width = `${box.w * s}px`;
+    el.style.height = `${box.h * s}px`;
+  };
+  const hideSelBox = () => {
+    if (selBoxRef.current) selBoxRef.current.style.display = "none";
+  };
+
+  /** Show/hide the center guide lines (white flash on snap engage). */
+  const setGuides = (g: { horizontal: boolean; vertical: boolean }) => {
+    if (guideVRef.current) guideVRef.current.style.opacity = g.vertical ? "1" : "0";
+    if (guideHRef.current)
+      guideHRef.current.style.opacity = g.horizontal ? "1" : "0";
+  };
+  const hideGuides = () => setGuides({ horizontal: false, vertical: false });
+
+  const onTextMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const t = textDrag.current;
+    if (!t) return;
+    const scale = displayScale();
+    if (scale === 0) return;
+    const dxN = (e.clientX - t.startX) / scale / OUTPUT_WIDTH;
+    const dyN = (e.clientY - t.startY) / scale / OUTPUT_HEIGHT;
+    let pos = { x: t.start.x + dxN, y: t.start.y + dyN };
+    let guides = { horizontal: false, vertical: false };
+    if (!e.altKey) {
+      // Alt held bypasses snapping for free placement
+      const snapped = snapToCenterlines({
+        position: pos,
+        thresholdPx: SNAP_THRESHOLD_PX,
+        frameW: OUTPUT_WIDTH,
+        frameH: OUTPUT_HEIGHT,
+      });
+      pos = snapped.position;
+      guides = snapped.guides;
+    }
+    pos = { x: clamp01(pos.x), y: clamp01(pos.y) }; // keep the center on-frame
+    t.last = pos;
+    engineRef.current?.setTextPositionOverride(t.clipId, pos);
+    setGuides(guides);
+    positionSelBox(t.clipId);
+  };
+
+  const endTextDrag = () => {
+    const t = textDrag.current;
+    if (!t) return;
+    textDrag.current = null;
+    update(t.clipId, { position: t.last }); // one undo step per drag
+    engineRef.current?.setTextPositionOverride(t.clipId, null);
+    hideGuides();
+    positionSelBox(t.clipId);
   };
 
   useEffect(() => {
@@ -234,8 +340,45 @@ export function PreviewStage({ assets }: { assets: Asset[] }) {
   };
 
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (e.button !== 0) return;
+    const engine = engineRef.current;
+    const canvas = canvasRef.current;
+    if (!engine || !canvas || useTimelineStore.getState().isPlaying) return;
+
+    // text wins: clicking on a text clip selects it and begins a move drag in
+    // one gesture (the selected clip's kind decides what the stage drag does).
+    const scale = displayScale();
+    if (scale !== 0) {
+      const rect = canvas.getBoundingClientRect();
+      const hitTextId = engine.hitTestText(
+        (e.clientX - rect.left) / scale,
+        (e.clientY - rect.top) / scale,
+      );
+      if (hitTextId) {
+        useTimelineStore.getState().select(hitTextId);
+        const tc = liveTextClip();
+        if (tc) {
+          e.preventDefault();
+          canvas.setPointerCapture(e.pointerId);
+          textDrag.current = {
+            startX: e.clientX,
+            startY: e.clientY,
+            start: tc.position,
+            clipId: tc.id,
+            last: tc.position,
+          };
+          positionSelBox(tc.id);
+          return;
+        }
+      }
+    }
+
+    // otherwise pan the selected video clip's framing, or deselect on empty.
     const clip = liveClip();
-    if (!clip || e.button !== 0) return;
+    if (!clip) {
+      useTimelineStore.getState().select(null);
+      return;
+    }
     const size = engineRef.current?.getSourceSize(clip.assetId);
     if (!size) return;
 
@@ -265,6 +408,10 @@ export function PreviewStage({ assets }: { assets: Asset[] }) {
   };
 
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (textDrag.current) {
+      onTextMove(e);
+      return;
+    }
     const d = drag.current;
     if (!d) return;
     const scale = displayScale();
@@ -407,6 +554,26 @@ export function PreviewStage({ assets }: { assets: Asset[] }) {
     [],
   );
 
+  // reposition the selection outline as selection/edits/scrub change the box
+  // (drag updates it imperatively in onTextMove).
+  useEffect(() => {
+    if (textActive && textClip) positionSelBox(textClip.id);
+    else hideSelBox();
+    // positionSelBox/hideSelBox read live refs; rebinding each render is fine
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [textActive, textClip, playheadFrame]);
+
+  // bind the resize listener only while a text clip is active — not per scrub
+  // tick (which would churn add/removeEventListener every playhead change).
+  useEffect(() => {
+    if (!textActive || !textClip) return;
+    const id = textClip.id;
+    const onResize = () => positionSelBox(id);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [textActive, textClip?.id]);
+
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-muted/20">
       <div className="relative flex min-h-0 flex-1 items-center justify-center p-4">
@@ -431,14 +598,42 @@ export function PreviewStage({ assets }: { assets: Asset[] }) {
             tabIndex={framingActive ? 0 : -1}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
-            onPointerUp={endDrag}
-            onPointerCancel={endDrag}
+            onPointerUp={() => {
+              endTextDrag();
+              endDrag();
+            }}
+            onPointerCancel={() => {
+              endTextDrag();
+              endDrag();
+            }}
             onKeyDown={onCanvasKeyDown}
             className={`relative z-10 block h-full w-full rounded-lg border border-border shadow-[0_16px_48px_-16px_rgb(0_0_0/0.5)] outline-none transition-colors duration-150 focus-visible:border-foreground/40 data-[clamped=true]:border-foreground/40 ${
-              framingActive ? "cursor-grab active:cursor-grabbing" : ""
+              framingActive || textActive ? "cursor-grab active:cursor-grabbing" : ""
             }`}
             style={{ aspectRatio: "9 / 16" }}
           />
+          {/* center-alignment guides: white, shown only while snapped mid-drag */}
+          <div
+            ref={guideVRef}
+            aria-hidden
+            className="pointer-events-none absolute inset-y-0 left-1/2 z-20 w-px -translate-x-1/2 bg-white/70 opacity-0 transition-opacity duration-150"
+          />
+          <div
+            ref={guideHRef}
+            aria-hidden
+            className="pointer-events-none absolute inset-x-0 top-1/2 z-20 h-px -translate-y-1/2 bg-white/70 opacity-0 transition-opacity duration-150"
+          />
+          {/* text selection outline + non-interactive corner ticks */}
+          <div
+            ref={selBoxRef}
+            aria-hidden
+            className="pointer-events-none absolute z-20 hidden border border-white/70"
+          >
+            <span className="absolute -left-px -top-px size-1.5 bg-white" />
+            <span className="absolute -right-px -top-px size-1.5 bg-white" />
+            <span className="absolute -bottom-px -left-px size-1.5 bg-white" />
+            <span className="absolute -bottom-px -right-px size-1.5 bg-white" />
+          </div>
           {/* framing HUD: zoom readout + controls, only on a reframable clip */}
           {framingActive && (
             <div className="absolute bottom-2 left-2 z-20 flex items-center gap-0.5 rounded-md border border-border bg-background/70 px-1 py-0.5 backdrop-blur-md">
