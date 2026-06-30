@@ -339,7 +339,20 @@ export function addTextClip(
     fontSize: 64,
     fontFamily: "Geist Sans",
     color: "#FFFFFF",
-    animation: { preset: "none", durationInFrames: 15 },
+    fontStyle: { bold: false, italic: false, underline: false },
+    align: "center",
+    box: {
+      bg: { enabled: false, color: "#000000", opacity: 1 },
+      border: { enabled: false, color: "#FFFFFF", width: 4 },
+      padding: 24,
+      cornerRadius: 0,
+    },
+    animation: {
+      preset: "none",
+      durationInFrames: 15,
+      exit: "none",
+      exitDurationInFrames: 15,
+    },
   };
   return mapTrack(timeline, track.id, (t) => ({
     ...t,
